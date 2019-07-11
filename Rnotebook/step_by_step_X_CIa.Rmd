@@ -15,7 +15,7 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_knit$set(root.dir = '..')
 knitr::opts_chunk$set(
-  cache = TRUE,
+  cache = FALSE,
   out.width = "100%",
   fig.align = 'center',
   fig.width = 8,
@@ -34,7 +34,7 @@ file.copy("./img", "./Rnotebook", recursive=TRUE, overwrite=T)
 ```{r include=FALSE}
 source("GlobalParameters.R")
 pckToLoad = c('tidyverse', 'DT',  "threejs",
-              "plyr","citr","readxl",'scales',"rstan")
+              "plyr","citr","readxl",'scales',"rstan","reshape2")
 reloadpck()
 # source(glob_params$RFunc %>% paste0("get_os.R"))
 source(glob_params$f.RFunc("get_os.R"))
@@ -91,11 +91,11 @@ Codes are in R scripts `step_by_step_X_CIa.R`
 
 ## Load previous fit
 
-```{r load_previous_fit, include=FALSE, eval = T, cache = FALSE}
+```{r load_previous_fit, include=T, cache = FALSE}
 tmp.stanfile.name = "step_by_step_X_CIa"
 list.files(glob_params$Stan$FitPath, pattern = tmp.stanfile.name)
 fit_step_by_step_X_CIa = 
-  readr::read_rds(glob_params$Stan$f.FitPath("step_by_step_X_CIa_Chain_3_iter_4000_seed_1907111137_1907111137.stanFit"))
+  readr::read_rds(glob_params$Stan$f.FitPath("step_by_step_X_CIa_Chain_3_iter_4000_seed_1907111650_1907111650.stanFit"))
 ```
 
 ## Posterior summary
@@ -109,14 +109,14 @@ check_hmc_diagnostics(fit_step_by_step_X_CIa)
 ```{r Posterior_summary}
 tmp.fit = fit_step_by_step_X_CIa
 
-# tmp.parsName = c("CIa_min" ,
-#                  "CIa_max" ,
-#                  "CIa_delta" ,
-#                  "Par_CIa_50" ,
-#                  "log_Par_CIa_50",
-#                  "k_CIa" ,
-#                  "sigma_CIa",
-#                  "lp__")
+tmp.parsName = c("CIa_min" ,
+                 "CIa_max" ,
+                 "CIa_delta" ,
+                 "Par_CIa_50" ,
+                 "log_Par_CIa_50",
+                 "k_CIa" ,
+                 "sigma_CIa",
+                 "lp__")
 
 la_all = as.data.frame(rstan::extract(tmp.fit))
 
@@ -138,6 +138,15 @@ options("scipen"= 2,digits=2)
 la.summary_all
 ```
 
+## Diagnostic
+
+```{r}
+traceplot(tmp.fit, pars=tmp.parsName)
+stan_ac(tmp.fit)
+# pairs(tmp.fit, tmp.parsName)
+```
+
+
 
 ## Visual validation {.tabset .tabset-fade .tabset-pills}
 
@@ -153,9 +162,11 @@ tmp.chemi = "Rotenone"
 tmp.data.KE1 = KE1.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
 ```
 
-### X->CIa
+### X->CIa {.tabset .tabset-fade .tabset-pills}
 
-#### Point estimation
+#### Prediction with MAP
+
+**Maximum _a posteriori_**
 
 ```{r}
 options("scipen"= 6, digits=2)
@@ -168,8 +179,6 @@ tmp.pars_CIa = list(y_min     = tmp.est.ponct$CIa_min,
                     x_50      = tmp.est.ponct$log_Par_CIa_50,
                     k         = tmp.est.ponct$k_CIa)
 ```
-
-#### Prediction with MAP
 
 ```{r prediction_with_point_estim}
 p = ggplot(data = tmp.data.KE1,
@@ -185,6 +194,8 @@ p +
 ```
 
 #### Prediction with Post-Mean
+
+**Posterior Mean**
 
 ```{r}
 options("scipen"= 6, digits=2)
@@ -209,6 +220,53 @@ p +
   stat_function(fun = function(x) f.link.lgstc(log(x), 
                                                params = tmp.pars_CIa))
 ```
+
+#### Predictive Posterior
+
+```{r}
+names(tmp.fit)
+```
+
+
+
+```{r}
+tmp.CIa_pp <- rstan::extract(tmp.fit, "CIa_pred") %>% 
+  reshape2::melt()
+
+tmp.concentration_MuMol = data.frame(
+                            concentration_MuMol = tmp.data.KE1$concentration_MuMol, 
+                            Var2 = 1:12)
+
+tmp.CIa_pp = left_join(tmp.CIa_pp, tmp.concentration_MuMol, by = "Var2")
+```
+
+
+
+```{r}
+tmp.CIa_pp %>% 
+  ggplot() +
+  geom_point(aes(x = concentration_MuMol, y = value, group = Var2), colour = "orange", alpha = 0.1, adjust = .8) +
+  geom_point(data = tmp.data.KE1,
+           aes(x = concentration_MuMol,
+               y = c1_activity, colour = replication)) +
+  scale_y_continuous(limit=c(-5, NA),oob=squish) +
+  scale_x_continuous(trans = "log10") +
+  stat_function(fun = function(x) f.link.lgstc(log(x), 
+                                               params = tmp.pars_CIa)) +
+  ggtitle("Actual CIa and posterior predictive replications wrt Dose") +
+  annotate("text", x = 0.05, y = 80, label = "MAP prediction curve", hjust = 0) +
+  annotate("text", x = 0.05, y = 60, label = "Posterior replications", colour = "orange", hjust = 0) 
+```
+
+
+
+```{r}
+rm(list = ls(pattern = "tmp."))
+```
+
+
+
+
 
 
 

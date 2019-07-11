@@ -1,0 +1,172 @@
+---
+title: "step_by_step_X_CIa"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    code_folding: hide
+    number_sections: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    fig_caption: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '..')
+knitr::opts_chunk$set(
+  cache = TRUE,
+  out.width = "100%",
+  fig.align = 'center',
+  fig.width = 8,
+  fig.asp = 0.618,  # 1 / phi
+  fig.show = "hold",
+  warning=FALSE, message=FALSE,
+  eval = TRUE, echo = TRUE
+)
+```
+
+```{r include=F}
+file.copy("./img", "./Rnotebook", recursive=TRUE, overwrite=T)
+```
+
+
+```{r include=FALSE}
+source("GlobalParameters.R")
+pckToLoad = c('tidyverse', 'DT',  "threejs",
+              "plyr","citr","readxl",'scales',"rstan")
+reloadpck()
+# source(glob_params$RFunc %>% paste0("get_os.R"))
+source(glob_params$f.RFunc("get_os.R"))
+```
+
+
+Modelling qAOP using DBN
+
+# AOP ETR07N
+
+```{r echo=FALSE, out.width='100%'}
+knitr::include_graphics('./img/AOP_ETR07N.png')
+```
+
+- Chemical : `Dose` for chemical concentration
+- KE1 : `CIa` for complex I activity
+- KE2 : `MTa` for Mitochondrial activity
+- KE3 : `PRa` for proteostasis activity
+- KE4 : `NRa` for Neurite Area
+
+# Model description
+
+Let's implement user specified linkind function for each Key event relationship.
+
+## X -> CIa : Log-logistic
+
+```{r include=FALSE}
+source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R'))
+```
+
+truncation threshold is choosen to be c(0,120)
+
+$$\begin{equation}
+\begin{split}
+y &= \frac{y_{max} - y_{min}}{1 + e^{-k\left(\ln(x) - \ln(x_{50}) \right)}} + y_{min}\\
+y_{obs} &\sim \mathcal{N}(y, \sigma_{y}^2)
+\end{split}
+\end{equation}$$
+
+Here
+
+- $y$ : KE of interest
+- $x$ : Parent node of $y$ in the AOP.
+- $x_{50}$ : the center of symmetry of the logistic (transformed $tanh()$) function.
+
+# Inference
+
+Codes are in R scripts `step_by_step_X_CIa.R`
+
+```{r stan_inference, eval = F, code = readLines('step_by_step_X_CIa.R')}
+```
+
+# Analysis of fit
+
+## Load previous fit
+
+```{r load_previous_fit, include=FALSE, eval = T, cache = FALSE}
+tmp.stanfile.name = "step_by_step_X_CIa"
+list.files(glob_params$Stan$FitPath, pattern = tmp.stanfile.name)
+fit_step_by_step_X_CIa = 
+  readr::read_rds(glob_params$Stan$f.FitPath("step_by_step_X_CIa_Chain_3_iter_4000_seed_1907111137_1907111137.stanFit"))
+```
+
+## Posterior summary
+
+```{r eval = F}
+fit_step_by_step_X_CIa
+check_hmc_diagnostics(fit_step_by_step_X_CIa)
+```
+
+
+```{r Posterior_summary}
+tmp.fit = fit_step_by_step_X_CIa
+
+# tmp.parsName = c("CIa_min" ,
+#                  "CIa_max" ,
+#                  "CIa_delta" ,
+#                  "Par_CIa_50" ,
+#                  "log_Par_CIa_50",
+#                  "k_CIa" ,
+#                  "sigma_CIa",
+#                  "lp__")
+
+la_all = as.data.frame(rstan::extract(tmp.fit))
+
+la.map_all = la_all[which.max(la_all$lp__),]
+
+
+la.summary_all = summary(tmp.fit,
+                         probs = c(0.05, 0.95))$summary %>% as.data.frame()
+
+# la.summary_all$se_mean = NULL
+# la.summary_all$n_eff   = NULL
+# la.summary_all$Rhat    = NULL
+la.summary_all$MAP = la.map_all %>% as.matrix() %>% c()
+la.mean_all = la.summary_all["mean"] %>% t() %>% as.data.frame()
+
+la.summary_all = la.summary_all %>% select(MAP, mean,se_mean, sd, `5%`, `95%`,n_eff,Rhat)
+
+options("scipen"= 2,digits=2)
+la.summary_all
+```
+
+
+## Visual validation {.tabset .tabset-fade .tabset-pills}
+
+**Linking functions**
+
+```{r linking_functions, eval = F, code = readLines(glob_params$f.RScript("CPDs.R"))}
+```
+
+```{r include=F}
+source(glob_params$f.RScript("CPDs.R"))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

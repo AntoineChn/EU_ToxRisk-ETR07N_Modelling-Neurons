@@ -3,6 +3,7 @@
 .RData
 .Ruserdata
 .DS_Store
+*.rds
 
 stan/fit/*.stanFit
 stan/fit/*.csv

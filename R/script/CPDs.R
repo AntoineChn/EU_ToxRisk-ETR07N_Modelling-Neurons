@@ -32,3 +32,4 @@ f.link.trancated.lgstc = function(x,
     f.link.truncation(., lower=lower, upper=upper) %>%
     return()
 }
+

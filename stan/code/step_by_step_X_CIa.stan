@@ -79,5 +79,8 @@ model {
 }
 
 generated quantities {
-  
+  vector[ndoses_CIa] CIa_pred;
+  for(i in 1:ndoses_CIa){
+      CIa_pred[i] = (CIa_max - CIa_min) / (1. + exp( - k_CIa * (log_dose_CIa[i] - log_Par_CIa_50))) + CIa_min ;
+    }
 }

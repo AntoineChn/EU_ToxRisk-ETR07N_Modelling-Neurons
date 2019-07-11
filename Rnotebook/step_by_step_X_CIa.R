@@ -63,6 +63,7 @@ tmp.parsName = c("CIa_min" ,
                  "log_Par_CIa_50",
                  "k_CIa" ,
                  "sigma_CIa",
+                 "CIa_pred",
                  "lp__")
 
 nb.chains = 3

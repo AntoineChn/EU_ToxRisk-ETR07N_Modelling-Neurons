@@ -4,9 +4,9 @@ if(!require(here)) install.packages("here")
 glob_params = NULL
 glob_params$rootPath = here::here()
 glob_params$RPath = paste0(glob_params$rootPath,"/R/")
-glob_params$RFunc = paste0(glob_params$RPath, "/function/")
-glob_params$PlotPath = paste0(glob_params$rootPath,"/plot/")
-glob_params$RScript = paste0(glob_params$RPath, "/script/")
+glob_params$RFunc = paste0(glob_params$RPath, "function/")
+glob_params$PlotPath = paste0(glob_params$rootPath,"plot/")
+glob_params$RScript = paste0(glob_params$RPath, "script/")
 glob_params$f.RScript = function(..., list = F) {
   file = .Internal(paste(list(...),sep = "",collapse = ""))
   res = paste0(glob_params$RScript, file)
@@ -15,8 +15,19 @@ glob_params$f.RScript = function(..., list = F) {
   }else{
     cat("The file name is not specified\n")
     if(list) print(list.files(res))
-    print(list.files(res))
     return(glob_params$RScript)
+  }
+}
+
+glob_params$f.RFunc = function(..., list = F) {
+  file = .Internal(paste(list(...),sep = "",collapse = ""))
+  res = paste0(glob_params$RFunc, file)
+  if(file != ""){
+    return(res)
+  }else{
+    cat("The file name is not specified\n")
+    if(list) print(list.files(res))
+    return(glob_params$RFunc)
   }
 }
 
@@ -32,7 +43,6 @@ glob_params$Stan$f.CodePath = function(..., list = F) {
   }else{
     cat("The file name is not specified\n")
     if(list) print(list.files(res))
-    print(list.files(res))
     return(here::here("/stan/code/"))
   }
 }
@@ -59,8 +69,8 @@ glob_params$Stan$f.FitPath  = function(..., list = F) {
     return(res)
   }else{
     cat("The file/folder name or is not specified")
-    if(list) print(list.files(res))
-    return(here::here("stan/fit/"))
+    if(list) return(list.files(res))
+    print(here::here("stan/fit/"))
   }
 }
 
@@ -83,7 +93,7 @@ file.copy("./img","./Rnotebook", recursive = T)
       print(ipak(pckToLoad))
       if("rstan" %in% pckToLoad) {
         rstan_options(auto_write = TRUE)
-        options(mc.cores = parallel::detectCores() )
+        options(mc.cores = parallel::detectCores() - 1)
       }
     }
   }

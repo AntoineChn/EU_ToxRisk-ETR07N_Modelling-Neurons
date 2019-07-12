@@ -2,3 +2,15 @@
 .Rhistory
 .RData
 .Ruserdata
+.DS_Store
+*.rds
+
+stan/fit/*.stanFit
+stan/fit/*.csv
+stan/fit/*.stan
+stan/prog/*.stanProg
+
+Rnotebook/*.html
+Rnotebook/*_files
+Rnotebook/*_cache
+Rnotebook/img/*

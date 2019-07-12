@@ -1,0 +1,506 @@
+---
+title: "CS4 Context and data on LUHMES cell from Konstanz"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    code_folding: hide
+    number_sections: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    fig_caption: true
+bibliography: [references.bib]
+---
+
+# Problem
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '..')
+knitr::opts_chunk$set(
+  cache = TRUE,
+  out.width = "100%",
+  fig.align = 'center',
+  fig.width = 8,
+  fig.asp = 0.618,  # 1 / phi
+  fig.show = "hold",
+  warning=FALSE, message=FALSE,
+  eval = TRUE, echo = TRUE
+)
+```
+
+```{r include=FALSE}
+source("GlobalParameters.R")
+pckToLoad = c('tidyverse', 'DT',  "threejs",
+              "plyr","citr","readxl",'scales',"rstan")
+reloadpck()
+source(glob_params$RFunc %>% paste0("get_os.R"))
+```
+
+
+Modelling qAOP using DBN
+
+# AOP ETR07N
+
+ETR07N : inhibition of mitochondrial complex I of nigrostriatal neurons leads to Parkinsonian motor deficits
+
+> 由 黑质纹状体神经元 中 线粒体复合物I 被抑制，而导致的 帕金森运动缺陷症
+
+```{r echo=FALSE, out.width='100%'}
+knitr::include_graphics('./img/AOP_ETR07N.png')
+```
+
+- MIE: Binding to mitochondrial complex I
+    - Binding site of rotenone at cI known
+    - Cryo-EM structure of human cI known
+    - Test: docking of rotenone and deguelin into this structure (in silico)
+- KE1: Inhibition of complex I : 
+    - Measurements of cI activity in permeabilized cells, so that the mitochondria are directly accessible.
+- KE2 (mito dysfunction): 
+    - overall "basal" mitochondrial respiration of intact cells, acutely treated with rot/deg.
+- KE3 (proteostasis): 
+    - activity of the proteasome (assessed by proteasomal modification of a fluorescent proteasome substrate).
+    - The correlation between mitochondrial dysfunction and impaired proteostasis is based on the considerations that 
+        - proteostasis is an energy-consuming process requiring ATP from mitochondria, and that 
+        - components of the proteasomal system are subject to inhibition by ROS, generated from dysfunctional mitochondria (Finley, 2009). 
+- ~~KE4 (neuronal degeneration):~~
+    - ~~neurite outgrowth assay (decrease in neurite outgrowth assessed in parallel to blunt cytotoxicity).~~
+- ~~KE5 (neuro-inflammation): assay still in development.~~
+
+## Chemical components
+
+- Rotenone
+- Deguelin (structurally similar to rotenone PPT: SOT CS4 RAX 2019_V1)
+
+# **Q & A**
+
+## Data Set 1
+
+File name : `Example data set rotenone deguelin UKN4 NeuriTox glucose.xlsx`
+
+> **Mail** from Johannes Delp 1st March 2019
+>
+> attached is an example data set of our neurite outgrowth assay (synonyms: UKN4 or NeuriTox) with rotenone and deguelin as toxicants.
+>
+> Is the data organized in a way that you can use it for your qAOP modelling? If yes, I'll send you more.
+
+**Comments from Frédéric**
+
+> - You have an incredible number of doses!
+> - To Wang: technically, that is informed censoring, but we may need the competing cell death pathway explicitly.
+
+**Some questions**
+
+> - main question is : N1, N2, etc are different times ?
+
+> - How to best treat viability is another big question ?
+> - Why empty lines ?
+
+**Original Answers from Johannes**
+
+> The lines are different concentrations tested. We decided to test multiple different concentrations with fewer replicates, instead of only few concentrations with many replicates.
+The columns (N1, N2, etc.) are different independent repetitions of the same experiment with new cells and new rotenone/deguelin preparations. The treatment time is always 24 h.
+
+> The most relevant output of the assay for you and the qAOP modelling is certainly neurite area. We assess neurite area and viability from the same pictures, so we can directly see whether neurite outgrowth is impaired at concentrations which don’t impair general cell viability (measured by membrane integrity), or whether neurites are reduced due to loss of viability (dead cells can't have neurites, but live cells can have no neurites). This is especially useful for us, when we use the test as stand-alone without other assays or a AOP framework. In this case, we evaluate whether the EC50 ratio (viability/neurite area) is >=4; if so, the substance is considered to be specifically neurotoxic.
+
+**Answers from Leist**
+
+> - For the moment it makes sense to focus on neurite data, without viability.
+> - This works well for rotenone and deguelin. They show clear neurote effects as concentrations lower than the ones for cell death
+> - unfortunately, high rotenone concentrations will give ome wrong data.
+>     - Reason is that for some compounds, the neurite data are kind of artifacts. There is anapparent neurite effect, because cells are dying.
+>     - Sometimes GSH or ATP are dropping because cells are dead
+>     - The cell death issue applies more or less to all functional data.
+
+## Data set 2
+
+Three files 
+
+- `KE1 rotenone deguelin c1 activity glucose.xlsx`
+    - Frequency of measurment : One measurement every 5-7 mins
+    - How many endpoint (in time) : 1 measurement 
+        - The first measurement taken between 5-7 mins
+- `KE2 rotenone deguelin mitochondrial respiration glucose.xlsx`
+    - Frequency of measurment : One measurement every 5-7 mins
+    - How many endpoint (in time) : 1 measurement 
+        - The third measurement taken between at about 24 mins
+- `KE3 rotenone deguelin Proteasomal activity glucose.xlsx`
+    - ?
+
+**Comments from Johannes**
+
+> - For the KE1&2 assay we have no issue with cytotoxicity, since the treatment is acute and the measurement is done directly (10-60 min) after treatment, so the cells hadn't time to die.
+> - For the KE3 assay, the same cytotox data apply as for the KE4 data that you already have, it was measured from parallel plates.
+> - The concentrations with empty lines come from the fact that I ran other assays in parallel which used different concentrations of the substances and I combined them in one table.
+
+----
+
+# Discriptive stat {.tabset .tabset-pills}
+
+```{r data_science_workflow, echo=FALSE, fig.cap="Data science workflow", out.width='100%'}
+knitr::include_graphics('./img/data_science_workflow.png')
+```
+
+We have following datasets
+
+```{r}
+glob_params$DataPath %>% list.files()
+```
+
+----
+
+----
+
+## KE1 : CIa
+
+**Inhibition of Complex I**
+
+### Import
+```{r}
+ex.names = excel_sheets(glob_params$DataPath %>% paste0("KE1 rotenone deguelin c1 activity glucose.xlsx"))
+ex.names
+
+KE1.Rotenone = 
+  read_xlsx(glob_params$DataPath %>% paste0("KE1 rotenone deguelin c1 activity glucose.xlsx"),
+          sheet = "Rotenone")
+
+KE1.Deguelin =   read_xlsx(glob_params$DataPath %>% paste0("KE1 rotenone deguelin c1 activity glucose.xlsx"),
+          sheet = "Deguelin")
+```
+
+### Transform
+
+```{r}
+{
+  KE1.Rotenone.rs = fill(KE1.Rotenone, `concentration [µM]`) %>% 
+    gather(.,
+           starts_with("c1 activity"),
+          key = "replication", value = "c1_activity") %>% 
+    drop_na(., "c1_activity")
+
+  names(KE1.Rotenone.rs)[1] = "concentration_MuMol"
+  KE1.Rotenone.rs$concentration_MuMol [KE1.Rotenone.rs$concentration_MuMol == "DMSO control"] = 0
+  
+  KE1.Rotenone.rs$concentration_MuMol = as.numeric(KE1.Rotenone.rs$concentration_MuMol)
+  
+  KE1.Rotenone.rs = arrange(KE1.Rotenone.rs,concentration_MuMol)
+}
+{
+  KE1.Deguelin
+  KE1.Deguelin.rs = fill(KE1.Deguelin, `concentration [µM]`) %>% 
+    gather(.,
+           starts_with("c1 activity"),
+          key = "replication", value = "c1_activity") %>% 
+    drop_na(., "c1_activity")
+  
+  names(KE1.Deguelin.rs)[1] = "concentration_MuMol"
+  KE1.Deguelin.rs$concentration_MuMol [KE1.Deguelin.rs$concentration_MuMol == "DMSO control"] = 0
+  
+  KE1.Deguelin.rs$concentration_MuMol = as.numeric(KE1.Deguelin.rs$concentration_MuMol)
+  
+  KE1.Deguelin.rs = arrange(KE1.Deguelin.rs,concentration_MuMol)
+}
+
+KE1.Deguelin.rs$chemi = "Deguelin"
+KE1.Rotenone.rs$chemi = "Rotenone"
+
+KE1.both = 
+  bind_rows(KE1.Deguelin.rs,
+        KE1.Rotenone.rs)
+```
+
+```{r}
+KE1.both %>% dplyr::group_by(chemi)
+```
+
+### Visualisation
+
+```{r}
+p = ggplot(data = KE1.both,
+           aes(x = concentration_MuMol,
+               y = c1_activity))
+
+p + 
+  geom_point(aes(colour = replication)) + 
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  # scale_x_continuous(trans = "log10") +
+  facet_grid(. ~ chemi) +
+  ggtitle("Raw Data")
+
+p + 
+  geom_point(aes(colour = replication)) + 
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  scale_x_continuous(trans = "log10") +
+  facet_grid(. ~ chemi) + geom_smooth()+
+  ggtitle("Raw Data with Log_trans(x)")
+
+```
+
+
+## KE2 : MTa
+
+**Mitochondrial dysfunction**
+
+### Import
+
+```{r}
+ex.names = excel_sheets(glob_params$DataPath %>% paste0("KE2 rotenone deguelin mitochondrial respiration glucose.xlsx"))
+ex.names
+
+KE2.Rotenone = 
+  read_xlsx(glob_params$DataPath %>% paste0("KE2 rotenone deguelin mitochondrial respiration glucose.xlsx"),
+          sheet = "Rotenone")
+
+KE2.Deguelin =   read_xlsx(glob_params$DataPath %>% paste0("KE2 rotenone deguelin mitochondrial respiration glucose.xlsx"),
+          sheet = "Deguelin")
+```
+
+### Transform
+
+```{r}
+{
+  KE2.Rotenone.rs = fill(KE2.Rotenone, `concentration [µM]`) %>% 
+    gather(.,
+           starts_with("mito. resp."),
+           key = "replication", value = "mito_resp") %>% 
+    drop_na(., "mito_resp")
+  
+  names(KE2.Rotenone.rs)[1] = "concentration_MuMol"
+  KE2.Rotenone.rs$concentration_MuMol [KE2.Rotenone.rs$concentration_MuMol == "DMSO control"] = 0
+  
+  KE2.Rotenone.rs$concentration_MuMol = as.numeric(KE2.Rotenone.rs$concentration_MuMol)
+  
+  KE2.Rotenone.rs = arrange(KE2.Rotenone.rs,concentration_MuMol)
+}
+
+{
+  KE2.Deguelin.rs = fill(KE2.Deguelin, `concentration [µM]`) %>% 
+    gather(.,
+           starts_with("mito. resp."),
+           key = "replication", value = "mito_resp") %>% 
+    drop_na(., "mito_resp")
+  
+  names(KE2.Deguelin.rs)[1] = "concentration_MuMol"
+  KE2.Deguelin.rs$concentration_MuMol [KE2.Deguelin.rs$concentration_MuMol == "DMSO control"] = 0
+  
+  parse_double(KE2.Deguelin.rs$concentration_MuMol)
+  
+  KE2.Deguelin.rs$concentration_MuMol = as.numeric(KE2.Deguelin.rs$concentration_MuMol)
+  
+  KE2.Deguelin.rs = arrange(KE2.Deguelin.rs,concentration_MuMol)
+}
+
+KE2.Deguelin.rs$chemi = "Deguelin"
+KE2.Rotenone.rs$chemi = "Rotenone"
+
+KE2.both = 
+  bind_rows(KE2.Deguelin.rs,
+        KE2.Rotenone.rs)
+```
+
+```{r}
+KE2.both %>% dplyr::group_by(chemi)
+```
+
+### Visualisation
+
+```{r}
+p = ggplot(data = KE2.both,
+           aes(x = concentration_MuMol,
+               y = mito_resp))
+
+p + 
+  geom_point(aes(colour = replication)) + 
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  # scale_x_continuous(trans = "log10") +
+  facet_grid(. ~ chemi) + 
+  # geom_smooth() +
+  ggtitle("Raw Data")
+
+p + 
+  geom_point(aes(colour = replication)) + 
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  scale_x_continuous(trans = "log10") +
+  facet_grid(. ~ chemi) + geom_smooth()+
+  ggtitle("Raw Data with Log_trans(x)")
+```
+
+
+----
+
+## KE3 : PRa
+
+**Impaired Proteostasis**
+
+### Import
+
+```{r}
+ex.names = excel_sheets(glob_params$DataPath %>% paste0("KE3 rotenone deguelin Proteasomal activity glucose.xlsx"))
+ex.names
+
+KE3.Rotenone = 
+  read_xlsx(glob_params$DataPath %>% paste0("KE3 rotenone deguelin Proteasomal activity glucose.xlsx"),
+          sheet = "Rotenone")
+
+KE3.Deguelin =   read_xlsx(glob_params$DataPath %>% paste0("KE3 rotenone deguelin Proteasomal activity glucose.xlsx"),
+          sheet = "Deguelin")
+```
+
+
+### Transform
+
+```{r}
+{
+  KE3.Rotenone
+  KE3.Rotenone.rs = fill(KE3.Rotenone, `concentration [µM]`) %>% 
+    gather(.,
+           starts_with("Prot. acti."),
+           key = "replication", value = "Prot_acti") %>% 
+    drop_na(., "Prot_acti")
+  
+  names(KE3.Rotenone.rs)[1] = "concentration_MuMol"
+  KE3.Rotenone.rs$concentration_MuMol [KE3.Rotenone.rs$concentration_MuMol == "DMSO control"] = 0
+  
+  KE3.Rotenone.rs$concentration_MuMol = as.numeric(KE3.Rotenone.rs$concentration_MuMol)
+  
+  KE3.Rotenone.rs = arrange(KE3.Rotenone.rs,concentration_MuMol)
+}
+{
+  KE3.Deguelin.rs = fill(KE3.Deguelin, `concentration [µM]`) %>% 
+    gather(.,
+           starts_with("Prot. acti."),
+          key = "replication", value = "Prot_acti") %>% 
+    drop_na(., "Prot_acti")
+  
+  names(KE3.Deguelin.rs)[1] = "concentration_MuMol"
+  KE3.Deguelin.rs$concentration_MuMol [KE3.Deguelin.rs$concentration_MuMol == "DMSO control"] = 0
+  
+  KE3.Deguelin.rs$concentration_MuMol = as.numeric(KE3.Deguelin.rs$concentration_MuMol)
+  
+  KE3.Deguelin.rs = arrange(KE3.Deguelin.rs,concentration_MuMol)
+}
+
+KE3.Deguelin.rs$chemi = "Deguelin"
+KE3.Rotenone.rs$chemi = "Rotenone"
+
+KE3.both = 
+  bind_rows(KE3.Deguelin.rs,
+        KE3.Rotenone.rs)
+```
+
+```{r}
+KE3.both %>% dplyr::group_by(chemi)
+```
+
+### Visualisation
+
+```{r}
+p = ggplot(data = KE3.both,
+           aes(x = concentration_MuMol,
+               y = Prot_acti))
+p + 
+  geom_point(aes(colour = replication)) + 
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  # scale_x_continuous(trans = "log10") +
+  facet_grid(. ~ chemi) + 
+  geom_smooth() +
+  ggtitle("Raw Data")
+
+p + 
+  geom_point(aes(colour = replication)) + 
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  scale_x_continuous(trans = "log10") +
+  facet_grid(. ~ chemi) + geom_smooth()+
+  ggtitle("Raw Data with Log_trans(x)")
+```
+
+
+## KE4 : NRa
+
+**Neurite Area**
+
+### Import
+
+```{r}
+data.file.name = "Example data set rotenone deguelin UKN4 NeuriTox glucose.xlsx"
+
+ex.names = excel_sheets(glob_params$DataPath %>% paste0(data.file.name))
+ex.names
+
+KE4.Rotenone = 
+  read_xlsx(glob_params$DataPath %>% paste0(data.file.name),
+          sheet = "Rotenone")
+
+KE4.Deguelin =   read_xlsx(glob_params$DataPath %>% paste0(data.file.name),
+          sheet = "Deguelin")
+```
+
+### Transform
+
+```{r}
+{
+  KE4.Rotenone.rs = fill(KE4.Rotenone, `concentration [µM]`) %>% 
+    select(.,`concentration [µM]`,starts_with("Neurite Area")) %>% 
+    gather(.,
+           starts_with("Neurite Area"),
+           key = "replication", value = "Neurite_Area") %>% 
+    drop_na(., "Neurite_Area")
+
+  names(KE4.Rotenone.rs)[1] = "concentration_MuMol"
+  KE4.Rotenone.rs$concentration_MuMol [KE4.Rotenone.rs$concentration_MuMol == "DMSO control"] = 0
+  
+  KE4.Rotenone.rs$concentration_MuMol = as.numeric(KE4.Rotenone.rs$concentration_MuMol)
+  
+  KE4.Rotenone.rs = arrange(KE4.Rotenone.rs,concentration_MuMol)
+}
+{
+  KE4.Deguelin
+  KE4.Deguelin.rs = fill(KE4.Deguelin, `concentration [µM]`) %>% 
+    select(.,`concentration [µM]`,starts_with("Neurite Area")) %>% 
+    gather(.,
+           starts_with("Neurite Area"),
+           key = "replication", value = "Neurite_Area") %>% 
+    drop_na(., "Neurite_Area")
+  
+  names(KE4.Deguelin.rs)[1] = "concentration_MuMol"
+  KE4.Deguelin.rs$concentration_MuMol [KE4.Deguelin.rs$concentration_MuMol == "DMSO control"] = 0
+  
+  KE4.Deguelin.rs$concentration_MuMol = as.numeric(KE4.Deguelin.rs$concentration_MuMol)
+  
+  KE4.Deguelin.rs = arrange(KE4.Deguelin.rs,concentration_MuMol)
+}
+
+KE4.Deguelin.rs$chemi = "Deguelin"
+KE4.Rotenone.rs$chemi = "Rotenone"
+
+KE4.both = 
+  bind_rows(KE4.Deguelin.rs,
+            KE4.Rotenone.rs)
+```
+
+```{r}
+KE4.both %>% dplyr::group_by(chemi)
+```
+
+### Visualisation
+
+```{r}
+p = ggplot(data = KE4.both,
+           aes(x = concentration_MuMol,
+               y = Neurite_Area))
+
+p + 
+  geom_point(aes(colour = replication)) + 
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  # scale_x_continuous(trans = "log10") +
+  facet_grid(. ~ chemi) + 
+  geom_smooth() +
+  ggtitle("Raw Data")
+
+p + 
+  geom_point(aes(colour = replication)) + 
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  scale_x_continuous(trans = "log10") +
+  facet_grid(. ~ chemi) + geom_smooth()+
+  ggtitle("Raw Data with Log_trans(x)")
+```

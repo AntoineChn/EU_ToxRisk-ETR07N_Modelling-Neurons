@@ -65,8 +65,6 @@ Let's implement user specified linkind function for each Key event relationship.
 source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R'))
 ```
 
-truncation threshold is choosen to be c(0,120)
-
 $$\begin{equation}
 \begin{split}
 y &= \frac{y_{max} - y_{min}}{1 + e^{-k\left(\ln(x) - \ln(x_{50}) \right)}} + y_{min}\\

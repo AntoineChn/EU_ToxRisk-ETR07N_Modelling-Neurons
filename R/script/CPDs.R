@@ -10,6 +10,15 @@ f.link.lgstc = function(x,
   return(res)
 }
 
+# Logistic function -------------------------------------------------------
+
+f.link.linear = function(x,
+                         params # = list(k = 1, y_max = 1, y_min = 0, x_50 = 0)
+) {
+  res = params$beta * x + params$beta_0
+  return(res)
+}
+
 # Truncation function -----------------------------------------------------
 
 f.link.truncation = function(y, lower = 0, upper = 120) {
@@ -19,17 +28,3 @@ f.link.truncation = function(y, lower = 0, upper = 120) {
             TRUE      ~ y) %>%
     return()
 }
-
-
-# Trancated logistic function ---------------------------------------------
-
-f.link.trancated.lgstc = function(x,
-                             params,
-                             lower = 0,
-                             upper = 1) {
-  require(tidyverse)
-  f.link.lgstc(x, params) %>%
-    f.link.truncation(., lower=lower, upper=upper) %>%
-    return()
-}
-

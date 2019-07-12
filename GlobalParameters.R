@@ -107,3 +107,9 @@ file.copy("./img","./Rnotebook", recursive = T)
                     full.names=TRUE, ignore.case=TRUE), 
          source, .GlobalEnv)
 }
+
+cleanup = function(){
+  if(exists("fit_step_by_step_X_CIa")) rm(fit_step_by_step_X_CIa) ; cat("fit_step_by_step_X_CIa removed\n")
+  rm(list = ls(pattern = "tmp.")) ; cat("tmp.* variables removed\n")
+  rm(list = ls(pattern = "la")) ; cat("la* variables removed\n")
+}

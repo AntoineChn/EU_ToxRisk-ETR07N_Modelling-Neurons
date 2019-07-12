@@ -25,9 +25,14 @@ model_step_by_step_X_CIa =
 file.copy(glob_params$Stan$f.CodePath(tmp.stanfile.name,".stan"), 
           glob_params$Stan$f.FitPath(tmp.stanCodeBU.name), overwrite = T)
 
-# Prepare stan input ------------------------------------------------------
 
+
+# Prepare stan input ------------------------------------------------------
 source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R'))
+
+
+
+# Fit for Rotenone --------------------------------------------------------
 
 tmp.chemi = "Rotenone"
 
@@ -54,8 +59,6 @@ stan_input.Neuro = list(
   # "NRa_NRa"    = tmp.data.KE4$Neurite_Area
 )
 
-# Fit ---------------------------------------------------------------------
-
 tmp.parsName = c("CIa_min" ,
                  "CIa_max" ,
                  "CIa_delta" ,
@@ -72,6 +75,7 @@ my.seed = tmp.timestamp
 
 tmp.stanFit.name = gsub("\\+", "", 
                         glob_params$Stan$f.FitPath(tmp.stanfile.name,
+                                                   "_Chemi_",tmp.chemi,
                                                    "_Chain_",nb.chains,
                                                    "_iter_",nb.iter,
                                                    "_seed_",my.seed,
@@ -93,4 +97,54 @@ write_rds(fit_step_by_step_X_CIa,
           path = paste0(tmp.stanFit.name, ".stanFit"))
 
 
+
+# Fit for Deguelin -------------------------------------------------------
+
+tmp.chemi = "Deguelin"
+
+tmp.data.KE1 = KE1.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE2 = KE2.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE3 = KE3.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE4 = KE4.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+
+stan_input.Neuro = list(
+  "ndoses_CIa" = length(tmp.data.KE1$concentration_MuMol),
+  "dose_CIa"   = tmp.data.KE1$concentration_MuMol,
+  "CIa_CIa"    = tmp.data.KE1$c1_activity
+  # ,
+  # "ndoses_MTa" = length(tmp.data.KE2$concentration_MuMol),
+  # "dose_MTa"   = tmp.data.KE2$concentration_MuMol,
+  # "MTa_MTa"    = tmp.data.KE2$mito_resp
+  # ,
+  # "ndoses_PRa" = length(tmp.data.KE3$concentration_MuMol),
+  # "dose_PRa"   = tmp.data.KE3$concentration_MuMol,
+  # "PRa_PRa"    = tmp.data.KE3$Prot_acti
+  # ,
+  # "ndoses_NRa" = length(tmp.data.KE4$concentration_MuMol),
+  # "dose_NRa"   = tmp.data.KE4$concentration_MuMol,
+  # "NRa_NRa"    = tmp.data.KE4$Neurite_Area
+)
+
+tmp.stanFit.name = gsub("\\+", "", 
+                        glob_params$Stan$f.FitPath(tmp.stanfile.name,
+                                                   "_Chemi_",tmp.chemi,
+                                                   "_Chain_",nb.chains,
+                                                   "_iter_",nb.iter,
+                                                   "_seed_",my.seed,
+                                                   "_",tmp.timestamp))
+
+
+fit_step_by_step_X_CIa = sampling(
+  model_step_by_step_X_CIa,
+  data = stan_input.Neuro,
+  pars = tmp.parsName,
+  chains = nb.chains,
+  refresh = min(nb.iter/10,50),
+  # sample_file = paste0(tmp.stanFit.name,".csv"),
+  iter = nb.iter,
+  seed = my.seed
+)
+
+write_rds(fit_step_by_step_X_CIa,
+          path = paste0(tmp.stanFit.name, ".stanFit"))
 

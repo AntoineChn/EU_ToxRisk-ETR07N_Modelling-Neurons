@@ -501,6 +501,6 @@ tmp.MTa_pp %>%
 # Cleanup
 
 ```{r}
-rm(list = ls(pattern = "tmp."))
+cleanup()
 ```
 

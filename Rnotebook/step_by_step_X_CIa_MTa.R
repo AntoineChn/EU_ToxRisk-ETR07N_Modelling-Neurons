@@ -25,9 +25,6 @@ tmp.stanCodeBU.name = paste0(tmp.stanfile.name,'_',tmp.timestamp,"_BU.stan")
 
 model_step_by_step_X_CIa = 
   stan_model(stanc_ret = stanc(glob_params$Stan$f.CodePath(tmp.stanfile.name,".stan")))
-    
-file.copy(glob_params$Stan$f.CodePath(tmp.stanfile.name,".stan"), 
-          glob_params$Stan$f.FitPath(tmp.stanCodeBU.name), overwrite = T)
 
 # Prepare stan input ------------------------------------------------------
 source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R'))
@@ -107,9 +104,12 @@ fit_step_by_step_X_CIa_MTa = sampling(
   seed = my.seed
 )
 
+source(glob_params$f.RScript("sound_simulation_finished.R"))
+
 write_rds(fit_step_by_step_X_CIa_MTa,
           path = paste0(tmp.stanFit.name, ".stanFit"))
-
+file.copy(glob_params$Stan$f.CodePath(tmp.stanfile.name,".stan"), 
+          glob_params$Stan$f.FitPath(tmp.stanCodeBU.name), overwrite = T)
 
 
 # Fit for Deguelin -------------------------------------------------------

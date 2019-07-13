@@ -54,18 +54,6 @@ stan_input.Neuro = list(
   # "ndoses_NRa" = length(tmp.data.KE4$concentration_MuMol),
   # "dose_NRa"   = tmp.data.KE4$concentration_MuMol,
   # "NRa_NRa"    = tmp.data.KE4$Neurite_Area
-  # ,
-  "ndoses_CIa_new" = length(tmp.data.KE1$concentration_MuMol),
-  "dose_CIa_new"   = tmp.data.KE1$concentration_MuMol
-  ,
-  "ndoses_MTa_new" = length(tmp.data.KE2$concentration_MuMol),
-  "dose_MTa_new"   = tmp.data.KE2$concentration_MuMol
-  ,
-  "ndoses_PRa_new" = length(tmp.data.KE3$concentration_MuMol),
-  "dose_PRa_new"   = tmp.data.KE3$concentration_MuMol
-  # ,
-  # "ndoses_NRa_new" = length(tmp.data.KE4$concentration_MuMol),
-  # "dose_NRa_new"   = tmp.data.KE4$concentration_MuMol
 )
 
 tmp.parsName = c("CIa_min" ,
@@ -84,16 +72,7 @@ tmp.parsName = c("CIa_min" ,
                  "Par_PRa_50",
                  "q_PRa",
                  "sigma_PRa",
-               # Posterior predictive dist samples
-                 # "CIa_pred_CIa",
-                 # 
-                 # "CIa_pred_MTa",
-                 # "MTa_pred_MTa",
-                 # 
-                 # "CIa_pred_PRa",
-                 # "MTa_pred_PRa",
-                 # "PRa_pred_PRa",
-                 
+
                  "lp__")
 
 nb.chains = 3
@@ -113,6 +92,8 @@ fit_step_by_step_X_CIa_MTa_PRa = sampling(
   iter = nb.iter,
   seed = my.seed
 )
+
+source(glob_params$f.RScript("sound_simulation_finished.R"))
 
 write_rds(fit_step_by_step_X_CIa_MTa_PRa,
           path = paste0(tmp.stanFit.name, ".stanFit"))

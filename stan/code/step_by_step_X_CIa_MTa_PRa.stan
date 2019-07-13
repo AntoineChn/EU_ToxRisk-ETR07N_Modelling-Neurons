@@ -63,16 +63,6 @@ data {
   int <lower=0>   ndoses_PRa                ; // number of doses
   real<lower=0>   dose_PRa     [ndoses_PRa] ; // data
   real<lower=0>   PRa_PRa      [ndoses_PRa] ; // data
-  
-// Posterior Prediction
-  int <lower=0>   ndoses_CIa_new                   ; 
-  real<lower=0>   dose_CIa_new    [ndoses_CIa_new] ; 
-
-  int <lower=0>   ndoses_MTa_new                   ; // number of doses
-  real<lower=0>   dose_MTa_new    [ndoses_MTa_new] ; // data
-
-  int <lower=0>   ndoses_PRa_new                   ; // number of doses
-  real<lower=0>   dose_PRa_new    [ndoses_PRa_new] ; // data
 }
 
 transformed data{
@@ -80,17 +70,9 @@ transformed data{
   vector[ndoses_MTa] log_dose_MTa ;
   vector[ndoses_PRa] log_dose_PRa ;
   
-  vector[ndoses_CIa_new] log_dose_CIa_new ;
-  vector[ndoses_MTa_new] log_dose_MTa_new ;
-  vector[ndoses_PRa_new] log_dose_PRa_new ;
-
   log_dose_CIa = to_vector( log(dose_CIa) );
   log_dose_MTa = to_vector( log(dose_MTa) );
   log_dose_PRa = to_vector( log(dose_PRa) );
-  
-  log_dose_CIa_new = to_vector( log(dose_CIa_new) );
-  log_dose_MTa_new = to_vector( log(dose_MTa_new) );
-  log_dose_PRa_new = to_vector( log(dose_PRa_new) );
 }
 
 parameters {
@@ -186,33 +168,4 @@ model {
   PRa_PRa ~ normal(PRa_tmp_PRa, 
                    sigma_PRa) ; // introduce observational error
 
-}
-
-generated quantities {
-  // vector[ndoses_CIa_new] CIa_pred_CIa;
-  // 
-  // vector[ndoses_MTa_new] CIa_pred_MTa;
-  // vector[ndoses_MTa_new] MTa_pred_MTa;
-  // 
-  // vector[ndoses_PRa_new] CIa_pred_PRa;
-  // vector[ndoses_PRa_new] MTa_pred_PRa;
-  // vector[ndoses_PRa_new] PRa_pred_PRa;
-  // 
-  // 
-  // // Pred CIa for dose_CIa_new
-  // CIa_pred_CIa = f_trans_logistic (ndoses_CIa_new, log_dose_CIa_new,  param_CIa  ) ;
-  // 
-  // // Pred MTa for dose_MTa_new
-  // CIa_pred_MTa = f_trans_logistic (ndoses_MTa_new, log_dose_MTa_new,  param_CIa  ) ; // log logistic because of log_dose and log_Par_CIa_50
-  // 
-  // MTa_pred_MTa = f_trans_linear   (ndoses_MTa_new, CIa_pred_MTa,  param_MTa  ) ;
-  // MTa_pred_MTa = f_min_max_trunc  (ndoses_MTa_new, MTa_pred_MTa,   0,   120  ) ;
-  // 
-  // // Pred PRa for dose_PRa_new
-  // CIa_pred_PRa = f_trans_logistic (ndoses_PRa_new, log_dose_PRa_new,  param_CIa  ) ; // log logistic because of log_dose and log_Par_CIa_50
-  // 
-  // MTa_pred_PRa = f_trans_linear   (ndoses_PRa_new, CIa_pred_PRa,  param_MTa  ) ;
-  // MTa_pred_PRa = f_min_max_trunc  (ndoses_PRa_new, MTa_pred_PRa,   0,   120  ) ;
-  // 
-  // PRa_pred_PRa = f_trans_logistic (ndoses_PRa, MTa_pred_PRa,  param_PRa  ) ;
 }

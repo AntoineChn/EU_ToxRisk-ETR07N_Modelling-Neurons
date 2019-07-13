@@ -105,7 +105,7 @@ parameters {
   real<lower=       0, upper=  100>    sigma_MTa     ; // observation noise standard error
 
   // real<lower=       0, upper=  120>     PRa_min     ;
-  real<lower=       0, upper=  120>     PRa_max     ;
+  // real<lower=       0, upper=  120>     PRa_max     ;
   real<lower=       0, upper=  100>     Par_PRa_50  ; //x of centre of symmetry
   // real<lower=    -100, upper=  100>     k_PRa       ; // Bio-Experts know PRa Up when MTa Up, so k > 0
   real<lower=log(  1), upper=log(100)>     q_PRa       ; // Bio-Experts know PRa Up when MTa Up, so k > 0
@@ -116,7 +116,7 @@ transformed parameters{
   real            log_Par_CIa_50  ;
 
   real            PRa_min         ;
-  // real            PRa_max         ;
+  real            PRa_max         ;
   real            k_PRa         ;
 
   real            param_CIa[4]    ;
@@ -132,7 +132,7 @@ transformed parameters{
   param_MTa[1] = beta_MTa ;
   param_MTa[2] = beta_0_MTa ;
   
-  // PRa_max = 100;
+  PRa_max = 100;
   PRa_min = 0  ;
   k_PRa = exp(q_PRa) ;
   param_PRa[1] = k_PRa   ;
@@ -173,7 +173,7 @@ model {
                    sigma_MTa) ; // introduce observational error
   
   // Dose -> CIa_pred -> MTa_pred -> PRa
-  PRa_max    ~ normal(    100 , 10 )  ;
+  // PRa_max    ~ normal(    100 , 10 )  ;
   Par_PRa_50 ~ normal(     10 , 10 )  ;
   sigma_PRa  ~ normal(     10 , 20 )  ;
 

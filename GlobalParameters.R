@@ -113,6 +113,6 @@ cleanup = function(){
     rm(fit_step_by_step_X_CIa)
     cat("fit_step_by_step_X_CIa removed\n")
   }
-  rm(list = ls(pattern = "tmp.")) ; cat("tmp.* variables removed\n")
-  rm(list = ls(pattern = "la")) ; cat("la* variables removed\n")
+  rm(list = ls(pattern="tmp.",pos=.GlobalEnv), pos=.GlobalEnv) ; cat("tmp.* variables removed\n")
+  rm(list = ls(pattern="la"  ,pos=.GlobalEnv), pos=.GlobalEnv) ; cat("la* variables removed\n")
 }

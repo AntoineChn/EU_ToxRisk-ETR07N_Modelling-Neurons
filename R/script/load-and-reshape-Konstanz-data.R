@@ -217,3 +217,6 @@ reloadpck()
               KE4.Rotenone.rs)
   rm(data.file.name)
 }
+
+rm(list = ls(pattern = 'KE\\d.Rotenone') )
+rm(list = ls(pattern = 'KE\\d.Deguelin') )

@@ -90,7 +90,7 @@ parameters {
   // real<lower=       0, upper=  120>     PRa_max     ;
   real<lower=       0, upper=  100>     Par_PRa_50  ; //x of centre of symmetry
   // real<lower=    -100, upper=  100>     k_PRa       ; // Bio-Experts know PRa Up when MTa Up, so k > 0
-  real<lower=log(  1), upper=log(100)>     q_PRa       ; // Bio-Experts know PRa Up when MTa Up, so k > 0
+  real<lower=log(0.01), upper=log(100)>     q_PRa       ; // Bio-Experts know PRa Up when MTa Up, so k > 0
   real<lower=       0, upper=   20>     sigma_PRa   ; // observation noise standard error
 }
 

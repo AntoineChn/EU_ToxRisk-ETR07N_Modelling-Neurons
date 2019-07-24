@@ -37,8 +37,6 @@ pckToLoad = c('tidyverse', 'DT',  "threejs",
               "plyr","citr","readxl",'scales',"rstan","reshape2", 
               "bayesplot","gridExtra")
 reloadpck()
-# source(glob_params$RFunc %>% paste0("get_os.R"))
-source(glob_params$f.RFunc("get_os.R"))
 ```
 
 
@@ -112,6 +110,7 @@ to predict `CIa_pred`
 
 ```{r results='hide',fig.keep='all'}
 tmp.stanfile.name = "step_by_step_X_CIa_MTa"
+
 list.files(glob_params$Stan$FitPath, pattern = tmp.stanfile.name)
 fit_step_by_step_X_CIa_MTa =
   readr::read_rds(glob_params$Stan$f.FitPath("step_by_step_X_CIa_MTa_Chemi_Rotenone_Chain_3_iter_4000_seed_1907121347_1907121347.stanFit"))
@@ -276,7 +275,7 @@ Here
 - $x$ : Parent node of $y$ in the AOP.
 - $x_{50}$ : the center of symmetry of the logistic (transformed $tanh()$) function.
 
-#### A manuel fit
+#### A fit by hand
 
 - $y_{min}  = 0$
 - $y_{max}  = 100$
@@ -303,13 +302,15 @@ ggplot(data = p.data,
 
 ### Identifiability issue
 
-Analysis suggest and some preliminar stan fits show that
+Analysis suggests and some preliminar stan fits (calibrations) show that
 
 - $k$ can go easily to very big value (heavy tail)
 - $y_{min}$ is very poorly constrained by data
 - $y_{max}$ can be multi-modal
 
-Wang dicide to impose / transform these  problematic parameters as following
+#### Solution
+
+Wang decides to impose / transform these  problematic parameters as following
 
 - $y_{max} = 100$
 - $y_{min} = 0$
@@ -317,7 +318,7 @@ Wang dicide to impose / transform these  problematic parameters as following
 
 furthermore
 
-- in this stage, Wang set the prior of $x_{50}$ to be somewhere near 10
+- in this stage, Wang sets the prior of $x_{50}$ to be somewhere near 10
     - that is : $x_{50} \sim \mathcal{N}( 10, 10)$
 - $q \sim Unif (\,\ln(10),\; \ln (100) \,)$
 
@@ -462,8 +463,8 @@ p + facet_text(size = 15)
 ```{r}
 p <- mcmc_trace(posterior2,  
                 pars =  c("beta_MTa",
-                 "beta_0_MTa",
-                 "sigma_MTa"),
+                          "beta_0_MTa",
+                          "sigma_MTa"),
                 # n_warmup = dim(posterior2)[1]/2 %>% floor(),
                 facet_args = list(nrow = 2, labeller = label_parsed))
 p + facet_text(size = 15)

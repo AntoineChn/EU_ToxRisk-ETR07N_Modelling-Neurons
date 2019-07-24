@@ -7,12 +7,13 @@ if(require(here)) {
   warning('make sur you have package "here" installed')
 }
 
-source("GlobalParameters.R") 
+source("GlobalParameters.R")
 pckToLoad = c('tidyverse', "rstan")
 reloadpck()
-source(glob_params$RFunc %>% paste0("get_os.R"))
+# source(glob_params$f.RFunc("get_os.R"))
+source(glob_params$f.RFunc("get_timestamp.R"))
 
-tmp.timestamp =  gsub("[: -]", "" , Sys.time(), perl=TRUE) %>% as.numeric() %% 1E12 %/% 100
+tmp.timestamp = get_timestamp() ; tmp.timestamp
 
 # Modelling ---------------------------------------------------------------
 ## See the corresponding Rmarkdown file.
@@ -79,8 +80,11 @@ nb.chains = 3
 nb.iter = 10000
 my.seed = tmp.timestamp
 
-source(glob_params$f.RFunc("stanFit_newName.R"))
-tmp.stanFit.name = f.stanFit.newName()
+tmp.stanFit.Name = f.stanFit.newName(stanfile.name = tmp.stanfile.name,
+                                     timestamp     = tmp.timestamp,
+                                     nb.chains     = nb.chains,
+                                     nb.iter       = nb.iter,
+                                     seed          = my.seed)
 
 fit_step_by_step_X_CIa_MTa_PRa = sampling(
   model_step_by_step_X_CIa_MTa_PRa,

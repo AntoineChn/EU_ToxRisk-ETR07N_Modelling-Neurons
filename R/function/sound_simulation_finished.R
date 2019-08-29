@@ -1,5 +1,6 @@
 
 # Detect the plateform in use
+source(glob_params$f.RFunc("get_os.R"))
 tmp.os = get_os()
 # if on macos then play a sound
 if(tmp.os == "osx"){
@@ -8,6 +9,5 @@ if(tmp.os == "osx"){
   if(!require(beepr)) install.packages('beepr')
   if(tmp.os != "linux") beepr::beep()
 }
-
-rm(tmp.os, get_os)
+rm(tmp.os, get_os, pos=.GlobalEnv)
    

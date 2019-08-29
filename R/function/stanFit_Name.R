@@ -1,11 +1,13 @@
-f.stanFit.newName = function(stanfile.name,
+f.stanFit.newName = function(chemi,
+                             stanfile.name,
                              timestamp,
                              nb.chains,
                              nb.iter,
                              seed){
   newName = paste0(stanfile.name,
+                   "-chemi_",chemi,
                    "-timestamp_",timestamp,
-                   "-Chain_",nb.chains,
+                   "-chain_",nb.chains,
                    "-iter_",nb.iter,
                    "-seed_",seed)
   cat("The following is the name of the stan fit that will be exported to ./stan/fit/ folder\n", 

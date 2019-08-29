@@ -4,7 +4,7 @@ f.exists.stanCode = function(stanfile.name,
     message(stanfile.name, ".stan", 
             " does NOT exist in ./",path,"/ folder\n",
             "  Please check the name of your file !!!")
-    source("functions/get_os.R")
+    source(glob_params$f.RFunc("get_os.R"))
     os = get_os()
     rm(get_os,pos=.GlobalEnv)
     if(os == "osx"){

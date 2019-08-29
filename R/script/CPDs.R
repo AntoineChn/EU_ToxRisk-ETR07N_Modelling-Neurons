@@ -28,3 +28,18 @@ f.link.truncation = function(y, lower = 0, upper = 120) {
             TRUE      ~ y) %>%
     return()
 }
+
+# truncated tox_min
+f.link.exp_tox_min = function(x,
+                              params) {
+  require(tidyverse)
+  lapply(x, function(x.loc){
+    if(x.loc > params$x_tox_min){
+      res = params$y_max * (1 - exp(-params$k * (x.loc - params$x_tox_min)))
+      return(res)
+    } else {
+      res = 0
+      return(res)
+    }
+  }) %>% unlist() %>% return()
+}

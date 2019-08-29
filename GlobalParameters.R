@@ -102,10 +102,10 @@ file.copy("./img","./Rnotebook", recursive = T)
 }
 
 {
-  sapply(list.files(glob_params$RFunc,
-                    pattern="*.R$", 
-                    full.names=TRUE, ignore.case=TRUE), 
-         source, .GlobalEnv)
+  # sapply(list.files(glob_params$RFunc,
+  #                   pattern="*.R$", 
+  #                   full.names=TRUE, ignore.case=TRUE), 
+  #        source, .GlobalEnv)
 }
 
 cleanup = function(){

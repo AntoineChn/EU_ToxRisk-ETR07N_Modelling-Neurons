@@ -8,6 +8,7 @@
 stan/fit/*.stanFit
 stan/fit/*.csv
 stan/fit/*.stan
+stan/fit/*.R
 stan/prog/*.stanProg
 
 Rnotebook/*.html

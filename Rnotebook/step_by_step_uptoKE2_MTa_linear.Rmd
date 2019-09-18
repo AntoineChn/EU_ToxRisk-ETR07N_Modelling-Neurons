@@ -1,0 +1,863 @@
+---
+title: "step_by_step_uptoKE2_MTa_linear"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    code_folding: hide
+    number_sections: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    fig_caption: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '..')
+knitr::opts_chunk$set(
+  cache = FALSE,
+  out.width = "100%",
+  fig.align = 'center',
+  fig.width = 8,
+  fig.asp = 0.618,  # 1 / phi
+  fig.show = "hold",
+  warning=FALSE, message=FALSE,
+  eval = TRUE, echo = TRUE
+)
+```
+
+```{r include=F}
+file.copy("./img", "./Rnotebook", recursive=TRUE, overwrite=T)
+```
+
+
+```{r include=FALSE}
+source("GlobalParameters.R")
+source(glob_params$f.RFunc("stanFit_Name.R"))
+pckToLoad = c('tidyverse', 'DT',  "threejs",
+              "plyr","citr","readxl",'scales',"rstan","reshape2", "rgl",
+              "bayesplot","gridExtra")
+reloadpck()
+```
+
+Modelling qAOP using DBN
+
+# AOP ETR07N
+
+```{r echo=FALSE, out.width='100%'}
+knitr::include_graphics('./img/AOP_ETR07N.png')
+```
+
+- Chemical : `Dose` for chemical concentration
+- KE1 : `CIa` for complex I activity
+- KE2 : `MTa` for Mitochondrial activity
+- KE3 : `PRa` for proteostasis activity
+- KE4 : `NRa` for Neurite Area
+
+# Model description
+
+Let's implement user specified linkind function for each Key event relationship.
+
+## X -> CIa : Log-logistic
+
+$$\begin{equation}
+\begin{split}
+y &= \frac{y_{max} - y_{min}}{1 + e^{-k\left(\ln(x) - \ln(x_{50}) \right)}} + y_{min}\\
+y_{obs} &\sim \mathcal{N}(y, \sigma_{y}^2)
+\end{split}
+\end{equation}$$
+
+Here
+
+- $y$ : KE of interest : CIa
+- $x$ : Parent node of $y$ in the AOP : Dose
+- $x_{50}$ : the center of symmetry of the logistic (transformed $tanh()$) function.
+
+## CIa -> MTa : truncated Linear
+
+### Preliminary analysis {.tabset .tabset-fade .tabset-pills}
+
+#### Load previous fit upto CIa for Rotenone
+
+```{r include=T, cache = FALSE, results='hide'}
+tmp.stanfile.name = "step_by_step_uptoKE1_CIa_loglogistic"
+tmp.chemi = "Rotenone"
+
+f.stanFit.filter(pattern = tmp.stanfile.name, 
+                 chemi = tmp.chemi, 
+                 extension = "stanFit")
+tmp.stanFit.ts = f.stanFit.filter.timestamp(pattern = tmp.stanfile.name,
+                                            chemi = tmp.chemi,
+                           newest.first = T)
+tmp.stanFit.ts
+
+tmp.stanFit.name = f.stanFit.filter(pattern = tmp.stanFit.ts[1],
+                                    chemi = tmp.chemi, 
+                                    extension = "stanFit")
+tmp.stanFit.name
+
+fit_step_by_step_uptoKE1_CIa_loglogistic =
+  readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name[1]))
+```
+
+The stanFit used in this section corresponds to `r tmp.stanFit.name`
+
+1. Use 
+    - the dose of MTa data set
+    - the MAP point estimator of `r tmp.stanFit.name`
+to predict `CIa_pred` 
+1. Plot `MTa` wrt `CIa_pred`
+
+##### Rotenone
+
+```{r results='hide',fig.keep='all'}
+tmp.fit = fit_step_by_step_uptoKE1_CIa_loglogistic
+
+tmp.parsName = c("CIa_min" ,
+                 "CIa_max" ,
+                 "Par_CIa_50" ,
+                 "log_Par_CIa_50",
+                 "k_CIa" ,
+                 "sigma_CIa",
+                 
+                 "lp__")
+
+## MAP
+la_all = as.data.frame(rstan::extract(tmp.fit, pars = tmp.parsName))
+la.map_all = la_all[which.max(la_all$lp__),]
+
+## Linking function
+source(glob_params$f.RScript("CPDs.R")) ;
+source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R')) ;
+
+## Data
+tmp.chemi = "Rotenone"
+tmp.data.KE1 = KE1.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE2 = KE2.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+
+tmp.est.ponct = la.map_all
+
+# Parameters of stanFit for CIa
+tmp.pars_CIa = list(y_min     = tmp.est.ponct$CIa_min,
+                    y_max     = tmp.est.ponct$CIa_max,
+                    x_50      = tmp.est.ponct$log_Par_CIa_50,
+                    k         = tmp.est.ponct$k_CIa)
+
+p = ggplot(data = tmp.data.KE2,
+           aes(x = f.link.lgstc(log(concentration_MuMol), params = tmp.pars_CIa),
+               y = mito_resp))
+
+p +
+  geom_point(aes(colour = replication)) +
+  scale_x_continuous(limit=c(0,NA),oob=squish) +
+  scale_y_continuous(limit=c(0,NA),oob=squish)
+```
+
+#### Load previous fit upto CIa for Deguelin
+
+```{r include=T, cache = FALSE, results='hide'}
+tmp.stanfile.name = "step_by_step_uptoKE1_CIa_loglogistic"
+tmp.chemi = "Deguelin"
+
+f.stanFit.filter(pattern = tmp.stanfile.name, 
+                 chemi = tmp.chemi, 
+                 extension = "stanFit")
+tmp.stanFit.ts = f.stanFit.filter.timestamp(pattern = tmp.stanfile.name,
+                                            chemi = tmp.chemi,
+                           newest.first = T)
+tmp.stanFit.ts
+
+tmp.stanFit.name = f.stanFit.filter(pattern = tmp.stanFit.ts[1],
+                                    chemi = tmp.chemi, 
+                                    extension = "stanFit")
+tmp.stanFit.name
+
+fit_step_by_step_uptoKE1_CIa_loglogistic =
+  readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name[1]))
+```
+
+The stanFit used in this section corresponds to `r tmp.stanFit.name`
+
+1. Use 
+    - the dose of MTa data set
+    - the MAP point estimator of `r tmp.stanFit.name`
+to predict `CIa_pred` 
+1. Plot `MTa` wrt `CIa_pred`
+
+##### Deguelin
+
+```{r results='hide',fig.keep='all'}
+tmp.fit = fit_step_by_step_uptoKE1_CIa_loglogistic
+
+tmp.parsName = c("CIa_min" ,
+                 "CIa_max" ,
+                 "Par_CIa_50" ,
+                 "log_Par_CIa_50",
+                 "k_CIa" ,
+                 "sigma_CIa",
+                 
+                 "lp__")
+
+## MAP
+la_all = as.data.frame(rstan::extract(tmp.fit, pars = tmp.parsName))
+la.map_all = la_all[which.max(la_all$lp__),]
+
+## Linking function
+source(glob_params$f.RScript("CPDs.R")) ;
+source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R')) ;
+
+## Data
+tmp.chemi = "Deguelin"
+tmp.data.KE1 = KE1.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE2 = KE2.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+
+tmp.est.ponct = la.map_all
+
+# Parameters of stanFit for CIa
+tmp.pars_CIa = list(y_min     = tmp.est.ponct$CIa_min,
+                    y_max     = tmp.est.ponct$CIa_max,
+                    x_50      = tmp.est.ponct$log_Par_CIa_50,
+                    k         = tmp.est.ponct$k_CIa)
+
+p = ggplot(data = tmp.data.KE2,
+           aes(x = f.link.lgstc(log(concentration_MuMol), params = tmp.pars_CIa),
+               y = mito_resp))
+
+p +
+  geom_point(aes(colour = replication)) +
+  scale_x_continuous(limit=c(0,NA),oob=squish) +
+  scale_y_continuous(limit=c(0,NA),oob=squish)
+```
+
+### Modelling CIa -> MTa
+
+$$\begin{equation}
+\begin{split}
+y_{tmp} &= \beta x + \beta_{0} \\
+y &= \begin{cases}
+120 & \text{if $y_{tmp}>120$} \\
+0   & \text{if $y_{tmp}<0$}   \\
+y_{tmp} & \text{otherwise}
+\end{cases}\\
+y_{obs} &\sim \mathcal{N}(y, \sigma_{y}^2)
+\end{split}
+\end{equation}$$
+
+Here
+
+- $y$ : KE of interest : MTa
+- $x$ : Parent node of $y$ in the AOP.
+
+```{r}
+cleanup()
+rm(fit_step_by_step_uptoKE1_CIa_loglogistic)
+```
+# Analysis of fit
+
+## Rotenone {.tabset .tabset-fade .tabset-pills}
+
+### Load previous fit
+
+```{r include=T, cache = FALSE, results='hide'}
+tmp.stanfile.name = "step_by_step_uptoKE2_MTa_linear"
+tmp.chemi = "Rotenone"
+
+f.stanFit.filter(pattern = tmp.stanfile.name, 
+                 chemi = tmp.chemi, 
+                 extension = "stanFit")
+tmp.stanFit.ts = f.stanFit.filter.timestamp(pattern = tmp.stanfile.name,
+                                            chemi = tmp.chemi,
+                           newest.first = T)
+tmp.stanFit.ts
+
+tmp.stanFit.name = f.stanFit.filter(pattern = tmp.stanFit.ts[1],
+                                    chemi = tmp.chemi, 
+                                    extension = "stanFit")
+tmp.stanFit.name
+
+fit_step_by_step_uptoKE2_MTa_linear =
+  readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name[1]))
+```
+
+The stanFit used in this section corresponds to 
+
+- `r tmp.stanFit.name`
+
+### Posterior summary
+
+```{r eval = F}
+get_stancode(fit_step_by_step_uptoKE2_MTa_linear) %>% cat
+options(scipen=0, digits=7)
+fit_step_by_step_uptoKE2_MTa_linear
+check_hmc_diagnostics(fit_step_by_step_uptoKE2_MTa_linear)
+```
+
+
+```{r}
+tmp.fit = fit_step_by_step_uptoKE2_MTa_linear
+
+p.pars.CIa = c("y_min_CIa",
+               "y_max_CIa",
+               "x_50_CIa",
+               "k_CIa",
+               "sigma_CIa")
+
+p.pars.MTa = c("beta_MTa",
+               "beta_0_MTa",
+               "sigma_MTa")
+
+tmp.parsName = c(p.pars.CIa,
+                 p.pars.MTa,
+
+                 "lp__")
+
+la_all = as.data.frame(rstan::extract(tmp.fit, pars = tmp.parsName))
+
+la.map_all = la_all[which.max(la_all$lp__),]
+
+
+la.summary_all = summary(tmp.fit,
+                         probs = c(0.05, 0.95),
+                         pars = tmp.parsName)$summary %>% as.data.frame()
+
+la.summary_all$MAP = la.map_all %>% as.matrix() %>% c()
+la.mean_all = la.summary_all["mean"] %>% t() %>% as.data.frame()
+
+la.summary_all = la.summary_all %>% select(MAP, mean,se_mean, sd, `5%`, `95%`,n_eff,Rhat)
+
+# options("scipen"= 2,digits=5)
+# options("scipen"= 0,digits=7)
+la.summary_all %>% round(.,digits = 3) %>%  DT::datatable()
+```
+
+### Diagnostic {.tabset .tabset-fade .tabset-pills}
+
+```{r}
+posterior2 <- rstan::extract(tmp.fit,
+                             # inc_warmup = TRUE,
+                             permuted = FALSE)
+library(bayesplot)
+color_scheme_set("mix-blue-pink")
+```
+
+#### ShinyStan
+
+```{r eval=F, echo=T}
+shinystan::launch_shinystan(tmp.fit)
+```
+
+#### CIa {.tabset .tabset-fade .tabset-pills}
+
+##### Traceplots
+
+```{r}
+stan_trace(tmp.fit,
+           pars = p.pars.CIa,nrow = 2)
+```
+
+##### Posterior distribution
+
+```{r}
+stan_hist(tmp.fit,
+          pars = p.pars.MTa,nrow = 2)
+```
+
+
+##### Autocorrelation
+
+```{r}
+stan_ac(tmp.fit,
+        pars = p.pars.CIa,nrow = 2)
+```
+
+
+#### MTa {.tabset .tabset-fade .tabset-pills}
+
+##### Traceplots
+
+```{r}
+stan_trace(tmp.fit,
+          pars = p.pars.MTa,nrow = 2)
+```
+
+##### Posterior distribution
+
+```{r}
+stan_hist(tmp.fit,
+          pars = p.pars.MTa,nrow = 2)
+```
+
+
+##### Autocorrelation
+
+```{r}
+stan_ac(tmp.fit,
+        pars = p.pars.MTa,nrow = 2)
+```
+
+### Visual validation {.tabset .tabset-fade .tabset-pills}
+
+**Linking functions**
+
+```{r eval = F, code = readLines(glob_params$f.RScript("CPDs.R"))}
+```
+
+```{r include=F}
+source(glob_params$f.RScript("CPDs.R"))
+source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R'))
+tmp.chemi = "Rotenone"
+tmp.data.KE1 = KE1.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE2 = KE2.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+
+options("scipen"= 6, digits=5)
+```
+
+#### X->CIa {.tabset .tabset-fade .tabset-pills}
+
+##### Prediction with MAP
+
+**Maximum _a posteriori_**
+
+```{r}
+options("scipen"= 6, digits=2)
+tmp.est.ponct = la.map_all
+# tmp.est.ponct = la.mean_all ; la.mean_all %>% t()
+
+# Parameters of stanFit for CIa
+tmp.pars_CIa = list(y_min     = tmp.est.ponct$y_min_CIa,
+                    y_max     = tmp.est.ponct$y_max_CIa,
+                    x_50      = tmp.est.ponct$x_50_CIa %>% log(),
+                    k         = tmp.est.ponct$k_CIa)
+
+tmp.pars_CIa %>% as.data.frame()
+```
+
+```{r}
+p = ggplot(data = tmp.data.KE1,
+           aes(x = concentration_MuMol,
+               y = c1_activity))
+
+p +
+  geom_point(aes(colour = replication)) +
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  scale_x_continuous(trans = "log10") +
+  stat_function(fun = function(x) f.link.lgstc(log(x),
+                                               params = tmp.pars_CIa))
+```
+
+##### Prediction with Post-Mean
+
+**Posterior Mean**
+
+```{r}
+options("scipen"= 6, digits=2)
+tmp.est.ponct = la.mean_all
+
+# Parameters of stanFit for CIa
+tmp.pars_CIa = list(y_min     = tmp.est.ponct$y_min_CIa,
+                    y_max     = tmp.est.ponct$y_max_CIa,
+                    x_50      = tmp.est.ponct$x_50_CIa %>% log(),
+                    k         = tmp.est.ponct$k_CIa)
+
+tmp.pars_CIa %>% as.data.frame()
+```
+
+```{r}
+p = ggplot(data = tmp.data.KE1,
+           aes(x = concentration_MuMol,
+               y = c1_activity))
+
+p +
+  geom_point(aes(colour = replication)) +
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  scale_x_continuous(trans = "log10") +
+  stat_function(fun = function(x) f.link.lgstc(log(x),
+                                               params = tmp.pars_CIa))
+```
+
+#### CIa -> MTa {.tabset .tabset-fade .tabset-pills}
+
+##### Prediction with MAP
+
+**Maximum _a posteriori_**
+
+```{r}
+options("scipen"= 6, digits=2)
+tmp.est.ponct = la.map_all
+# tmp.est.ponct = la.mean_all
+
+# Parameters of stanFit for CIa
+tmp.pars_CIa = list(y_min     = tmp.est.ponct$y_min_CIa,
+                    y_max     = tmp.est.ponct$y_max_CIa,
+                    x_50      = tmp.est.ponct$x_50_CIa %>% log(),
+                    k         = tmp.est.ponct$k_CIa)
+
+tmp.pars_MTa = list(beta     = tmp.est.ponct$beta_MTa,
+                    beta_0   = tmp.est.ponct$beta_0_MTa)
+
+tmp.pars_MTa %>% as.data.frame()
+```
+
+```{r}
+p = ggplot(data = tmp.data.KE2,
+           aes(x = f.link.lgstc(log(concentration_MuMol), params = tmp.pars_CIa),
+               y = mito_resp))
+
+p +
+  geom_point(aes(colour = replication)) +
+  scale_x_continuous(limit=c(0,NA),oob=squish) +
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  stat_function(fun = function(x)
+    f.link.linear(x,
+                  params = tmp.pars_MTa) %>%
+      f.link.truncation(., lower = 0, upper = 120))
+
+```
+
+
+##### Prediction with Post-Mean
+
+**Posterior Mean**
+
+```{r}
+options("scipen"= 6, digits=2)
+tmp.est.ponct = la.mean_all
+
+# Parameters of stanFit for CIa
+tmp.pars_CIa = list(y_min     = tmp.est.ponct$y_min_CIa,
+                    y_max     = tmp.est.ponct$y_max_CIa,
+                    x_50      = tmp.est.ponct$x_50_CIa %>% log(),
+                    k         = tmp.est.ponct$k_CIa)
+
+tmp.pars_MTa = list(beta     = tmp.est.ponct$beta_MTa,
+                    beta_0   = tmp.est.ponct$beta_0_MTa)
+tmp.pars_MTa %>% as.data.frame()
+```
+
+```{r}
+p = ggplot(data = tmp.data.KE2,
+           aes(x = f.link.lgstc(log(concentration_MuMol), params = tmp.pars_CIa),
+               y = mito_resp))
+
+p +
+  geom_point(aes(colour = replication)) +
+  scale_x_continuous(limit=c(0,NA),oob=squish) +
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  stat_function(fun = function(x)
+    f.link.linear(x,
+                  params = tmp.pars_MTa) %>%
+      f.link.truncation(., lower = 0, upper = 120))
+
+```
+
+## Deguelin {.tabset .tabset-fade .tabset-pills}
+
+### Load previous fit
+
+```{r include=T, cache = FALSE, results='hide'}
+tmp.stanfile.name = "step_by_step_uptoKE2_MTa_linear"
+tmp.chemi = "Deguelin"
+
+f.stanFit.filter(pattern = tmp.stanfile.name, 
+                 chemi = tmp.chemi, 
+                 extension = "stanFit")
+tmp.stanFit.ts = f.stanFit.filter.timestamp(pattern = tmp.stanfile.name,
+                                            chemi = tmp.chemi,
+                           newest.first = T)
+tmp.stanFit.ts
+
+tmp.stanFit.name = f.stanFit.filter(pattern = tmp.stanFit.ts[1],
+                                    chemi = tmp.chemi, 
+                                    extension = "stanFit")
+tmp.stanFit.name
+
+fit_step_by_step_uptoKE2_MTa_linear =
+  readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name[1]))
+```
+
+The stanFit used in this section corresponds to 
+
+- `r tmp.stanFit.name`
+
+### Posterior summary
+
+```{r eval = F}
+get_stancode(fit_step_by_step_uptoKE2_MTa_linear) %>% cat
+options(scipen=0, digits=7)
+fit_step_by_step_uptoKE2_MTa_linear
+check_hmc_diagnostics(fit_step_by_step_uptoKE2_MTa_linear)
+```
+
+
+```{r}
+tmp.fit = fit_step_by_step_uptoKE2_MTa_linear
+
+p.pars.CIa = c("y_min_CIa",
+               "y_max_CIa",
+               "x_50_CIa",
+               "k_CIa",
+               "sigma_CIa")
+
+p.pars.MTa = c("beta_MTa",
+               "beta_0_MTa",
+               "sigma_MTa")
+
+tmp.parsName = c(p.pars.CIa,
+                 p.pars.MTa,
+
+                 "lp__")
+
+la_all = as.data.frame(rstan::extract(tmp.fit, pars = tmp.parsName))
+
+la.map_all = la_all[which.max(la_all$lp__),]
+
+
+la.summary_all = summary(tmp.fit,
+                         probs = c(0.05, 0.95),
+                         pars = tmp.parsName)$summary %>% as.data.frame()
+
+la.summary_all$MAP = la.map_all %>% as.matrix() %>% c()
+la.mean_all = la.summary_all["mean"] %>% t() %>% as.data.frame()
+
+la.summary_all = la.summary_all %>% select(MAP, mean,se_mean, sd, `5%`, `95%`,n_eff,Rhat)
+
+# options("scipen"= 2,digits=5)
+# options("scipen"= 0,digits=7)
+la.summary_all %>% round(.,digits = 3) %>%  DT::datatable()
+```
+
+### Diagnostic {.tabset .tabset-fade .tabset-pills}
+
+```{r}
+posterior2 <- rstan::extract(tmp.fit,
+                             # inc_warmup = TRUE,
+                             permuted = FALSE)
+library(bayesplot)
+color_scheme_set("mix-blue-pink")
+```
+
+#### ShinyStan
+
+```{r eval=F, echo=T}
+shinystan::launch_shinystan(tmp.fit)
+```
+
+#### CIa {.tabset .tabset-fade .tabset-pills}
+
+##### Traceplots
+
+```{r}
+p <- mcmc_trace(posterior2,
+                pars =  p.pars.CIa,
+                # n_warmup = dim(posterior2)[1]/2 %>% floor(),
+                facet_args = list(nrow = 2, labeller = label_parsed))
+p + facet_text(size = 15)
+```
+
+##### Posterior distribution
+
+```{r}
+# mcmc_hist_by_chain(posterior2,
+#                    pars = p.pars,
+#                   # n_warmup = dim(posterior2)[1]/2 %>% floor(),
+#                   facet_args = list(labeller = label_parsed))
+
+mcmc_hist(posterior2,
+          pars = p.pars.CIa,
+          facet_args = list(nrow = 2, labeller = label_parsed))
+
+# stan_hist(tmp.fit)
+```
+
+
+##### Autocorrelation
+
+```{r}
+stan_ac(tmp.fit, pars = p.pars.CIa)
+```
+
+
+#### MTa {.tabset .tabset-fade .tabset-pills}
+
+##### Traceplots
+
+```{r}
+p <- mcmc_trace(posterior2,
+                pars =  p.pars.MTa,
+                # n_warmup = dim(posterior2)[1]/2 %>% floor(),
+                facet_args = list(nrow = 2, labeller = label_parsed))
+p + facet_text(size = 15)
+```
+
+##### Posterior distribution
+
+```{r}
+mcmc_hist(posterior2,
+          pars = p.pars.MTa,
+          facet_args = list(nrow = 2, labeller = label_parsed))
+```
+
+
+##### Autocorrelation
+
+```{r}
+stan_ac(tmp.fit, pars = p.pars.MTa)
+```
+
+```{r echo=F}
+rm(posterior2)
+```
+
+### Visual validation {.tabset .tabset-fade .tabset-pills}
+
+**Linking functions**
+
+```{r eval = F, code = readLines(glob_params$f.RScript("CPDs.R"))}
+```
+
+```{r include=F}
+source(glob_params$f.RScript("CPDs.R"))
+source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R'))
+tmp.chemi = "Deguelin"
+tmp.data.KE1 = KE1.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE2 = KE2.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+
+options("scipen"= 6, digits=5)
+```
+
+#### X->CIa {.tabset .tabset-fade .tabset-pills}
+
+##### Prediction with MAP
+
+**Maximum _a posteriori_**
+
+```{r}
+options("scipen"= 6, digits=2)
+tmp.est.ponct = la.map_all
+# tmp.est.ponct = la.mean_all ; la.mean_all %>% t()
+
+# Parameters of stanFit for CIa
+tmp.pars_CIa = list(y_min     = tmp.est.ponct$y_min_CIa,
+                    y_max     = tmp.est.ponct$y_max_CIa,
+                    x_50      = tmp.est.ponct$x_50_CIa %>% log(),
+                    k         = tmp.est.ponct$k_CIa)
+
+tmp.pars_CIa %>% as.data.frame()
+```
+
+```{r}
+p = ggplot(data = tmp.data.KE1,
+           aes(x = concentration_MuMol,
+               y = c1_activity))
+
+p +
+  geom_point(aes(colour = replication)) +
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  scale_x_continuous(trans = "log10") +
+  stat_function(fun = function(x) f.link.lgstc(log(x),
+                                               params = tmp.pars_CIa))
+```
+
+##### Prediction with Post-Mean
+
+**Posterior Mean**
+
+```{r}
+options("scipen"= 6, digits=2)
+tmp.est.ponct = la.mean_all
+
+# Parameters of stanFit for CIa
+tmp.pars_CIa = list(y_min     = tmp.est.ponct$y_min_CIa,
+                    y_max     = tmp.est.ponct$y_max_CIa,
+                    x_50      = tmp.est.ponct$x_50_CIa %>% log(),
+                    k         = tmp.est.ponct$k_CIa)
+
+tmp.pars_CIa %>% as.data.frame()
+```
+
+```{r}
+p = ggplot(data = tmp.data.KE1,
+           aes(x = concentration_MuMol,
+               y = c1_activity))
+
+p +
+  geom_point(aes(colour = replication)) +
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  scale_x_continuous(trans = "log10") +
+  stat_function(fun = function(x) f.link.lgstc(log(x),
+                                               params = tmp.pars_CIa))
+```
+
+#### CIa -> MTa {.tabset .tabset-fade .tabset-pills}
+
+##### Prediction with MAP
+
+**Maximum _a posteriori_**
+
+```{r}
+options("scipen"= 6, digits=2)
+tmp.est.ponct = la.map_all
+# tmp.est.ponct = la.mean_all
+
+# Parameters of stanFit for CIa
+tmp.pars_CIa = list(y_min     = tmp.est.ponct$y_min_CIa,
+                    y_max     = tmp.est.ponct$y_max_CIa,
+                    x_50      = tmp.est.ponct$x_50_CIa %>% log(),
+                    k         = tmp.est.ponct$k_CIa)
+tmp.pars_MTa = list(beta     = tmp.est.ponct$beta_MTa,
+                    beta_0   = tmp.est.ponct$beta_0_MTa)
+
+tmp.pars_MTa %>% as.data.frame()
+```
+
+```{r}
+p = ggplot(data = tmp.data.KE2,
+           aes(x = f.link.lgstc(log(concentration_MuMol), params = tmp.pars_CIa),
+               y = mito_resp))
+
+p +
+  geom_point(aes(colour = replication)) +
+  scale_x_continuous(limit=c(0,NA),oob=squish) +
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  stat_function(fun = function(x)
+    f.link.linear(x,
+                  params = tmp.pars_MTa) %>%
+      f.link.truncation(., lower = 0, upper = 120))
+
+```
+
+
+##### Prediction with Post-Mean
+
+**Posterior Mean**
+
+```{r}
+options("scipen"= 6, digits=2)
+tmp.est.ponct = la.mean_all
+
+# Parameters of stanFit for CIa
+tmp.pars_CIa = list(y_min     = tmp.est.ponct$y_min_CIa,
+                    y_max     = tmp.est.ponct$y_max_CIa,
+                    x_50      = tmp.est.ponct$x_50_CIa %>% log(),
+                    k         = tmp.est.ponct$k_CIa)
+tmp.pars_MTa = list(beta     = tmp.est.ponct$beta_MTa,
+                    beta_0   = tmp.est.ponct$beta_0_MTa)
+tmp.pars_MTa %>% as.data.frame()
+```
+
+```{r}
+p = ggplot(data = tmp.data.KE2,
+           aes(x = f.link.lgstc(log(concentration_MuMol), params = tmp.pars_CIa),
+               y = mito_resp))
+
+p +
+  geom_point(aes(colour = replication)) +
+  scale_x_continuous(limit=c(0,NA),oob=squish) +
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  stat_function(fun = function(x)
+    f.link.linear(x,
+                  params = tmp.pars_MTa) %>%
+      f.link.truncation(., lower = 0, upper = 120))
+
+```
+

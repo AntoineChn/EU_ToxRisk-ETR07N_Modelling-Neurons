@@ -78,7 +78,7 @@ glob_params$DataPath      = paste0(glob_params$rootPath, "/data/")
 # glob_params$MCsimRegeneration = FALSE
 # glob_params$DataRegeneration = FALSE
 
-dir.create("./Rnotebook/img")
+if(!file.exists("./Rnotebook/img")) dir.create("./Rnotebook/img")
 file.copy("./img","./Rnotebook", recursive = T)
 
 {
@@ -109,10 +109,6 @@ file.copy("./img","./Rnotebook", recursive = T)
 }
 
 cleanup = function(){
-  if(exists("fit_step_by_step_X_CIa")) {
-    rm(fit_step_by_step_X_CIa)
-    cat("fit_step_by_step_X_CIa removed\n")
-  }
   rm(list = ls(pattern="tmp.",pos=.GlobalEnv), pos=.GlobalEnv) ; cat("tmp.* variables removed\n")
   rm(list = ls(pattern="la"  ,pos=.GlobalEnv), pos=.GlobalEnv) ; cat("la* variables removed\n")
 }

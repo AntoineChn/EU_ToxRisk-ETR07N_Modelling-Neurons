@@ -7,5 +7,5 @@ get_timestamp = function(){
 }
 
 cat("One function is imported\n",
-    " get_timestamp() : get a timestamp as `numeric` of format \n  yy-mm-dd-hh-mm :  ",
+    " get_timestamp() : get a timestamp as `numeric` of format \n  yy-mm-dd-hh-mm : \n",
     sep = "")

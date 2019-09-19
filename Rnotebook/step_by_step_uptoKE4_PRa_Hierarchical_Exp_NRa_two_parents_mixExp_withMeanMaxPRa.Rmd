@@ -1,0 +1,2287 @@
+---
+title: "step_by_step_uptoKE4_PRa_Hierarchical_Exp_NRa_two_parents_mixExp_withMeanMaxPRa"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    code_folding: hide
+    number_sections: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    fig_caption: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '..')
+knitr::opts_chunk$set(
+  cache = FALSE,
+  out.width = "100%",
+  fig.align = 'center',
+  fig.width = 8,
+  fig.asp = 0.618,  # 1 / phi
+  fig.show = "hold",
+  warning=FALSE, message=FALSE,
+  eval = TRUE, echo = TRUE
+)
+```
+
+```{r include=F}
+file.copy("./img", "./Rnotebook", recursive=TRUE, overwrite=T)
+```
+
+
+```{r include=FALSE}
+source("GlobalParameters.R")
+source(glob_params$f.RFunc("stanFit_Name.R"))
+pckToLoad = c('tidyverse', 'DT',  "threejs",
+              "plyr","citr","readxl",'scales',"rstan","reshape2", "rgl",
+              "bayesplot","gridExtra")
+reloadpck()
+```
+
+
+# AOP ETR07N
+
+```{r echo=FALSE, out.width='100%'}
+knitr::include_graphics('./img/AOP_ETR07N.png')
+```
+
+- Chemical : `Dose` for chemical concentration
+- KE1 : `CIa` for complex I activity
+- KE2 : `MTa` for Mitochondrial activity
+- KE3 : `PRa` for proteostasis activity
+- KE4 : `NRa` for Neurite Area
+
+# Model description
+
+Let's implement user specified function for each Key event relationship. 
+
+## X -> CIa : Log-logistic
+
+$$\begin{equation}
+\begin{split}
+y &= \frac{y_{max} - y_{min}}{1 + e^{-k\left(\ln(x) - \ln(x_{50}) \right)}} + y_{min}\\
+y_{obs} &\sim \mathcal{N}(y, \sigma_{y}^2)
+\end{split}
+\end{equation}$$
+
+Here variables are
+
+- $y$ : KE of interest : CIa
+- $x$ : Parent node of $y$ in the AOP : Dose
+
+Parameters are
+
+- $y_{max}$
+- $y_{min}$
+- $\ln(x_{50})$ : the center of symmetry of the logistic (transformed $tanh()$) function.
+- $\sigma_{y}$
+
+## CIa -> MTa : truncated Linear
+
+### Modelling CIa -> MTa
+
+$$\begin{equation}
+\begin{split}
+y_{tmp} &= \beta x + \beta_{0} \\
+y &= \begin{cases}
+120 & \text{if $y_{tmp}>120$} \\
+0   & \text{if $y_{tmp}<0$}   \\
+y_{tmp} & \text{otherwise}
+\end{cases}\\
+y_{obs} &\sim \mathcal{N}(y, \sigma_{y}^2)
+\end{split}
+\end{equation}$$
+
+Here, variables are
+
+- $y$ : KE of interest : MTa
+- $x$ : Parent node of $y$ in the AOP.
+
+Parameters are
+
+- $\beta$ 
+- $\beta_{0}$
+- $\sigma_{y}$
+
+## MTa -> PRa : 
+
+### Modelling MTa -> PRa
+
+Variables are : 
+
+- $rep_i\in \{1,2,3,4\}$ : Indexe of replication group. We have 4 replications here
+- $y_{obs, rep_i}$ : experimental measurements of **PRa** (KE of interest)
+- $x_{rep_i}$ : Parent node of $y$ in the AOP.
+
+Parameters are marked in <span style="color:red">col</span><span style="color:green">ors</span> :
+
+- red : indicates parameters that are shared by all individual data
+- green : parameters that are specific to each sub-group : here sub-group corresponds to different replication groups.
+  
+$$\begin{equation}
+\begin{split}
+\color{green}{y_{max,rep_i}} &\sim \mathcal{N}(\color{red}{\mu_{y_{max}}},\, \color{red}{\sigma_{y_{max}}}^2)\\
+y_{rep_i} &= \begin{cases}
+\color{green}{y_{max,rep_i}}  \left( 1 - e^{-\color{red}{k}(x_{rep_i} - \color{red}{x_{min}} )} \right) & \text{if $x_{rep_i} > x_{min}$} \\
+0   & \text{otherwise}
+\end{cases}\\
+y_{obs,rep_i} &\sim \mathcal{N}(y_{rep_i},\, \color{red}{\sigma_{y}}^2)\\
+\end{split}
+\end{equation}$$
+
+### Remarks
+
+#### 1. Interpertation of parameters
+
+- for $i \in {1,2,3,4}$, $\color{green}{y_{max,rep_i}}$ are saturation levels for each of 4 replication groups 
+    - to be discussed with the data producer whysuch difference exists
+- $x_{min} \in \mathbb{R}^+$ : Minimum Effect quantity of MTa for PRa
+
+#### 2. Hyper parameters for y_max
+
+This is a hierarchical model :
+
+- Introduce two hyper paramters for $\color{green}{y_{max,rep_i}}$
+    - $\mu_{y_{max}}  \sim \mathcal{N} (100,\, {\sigma_{\text{user-difined}}}^2)$ : prior
+    - $\sigma_{y_{max}}  \sim \mathcal{L}$ : $\mathcal{L}$ a user-defined distribution : Half-normal as suggested by F.Y.B
+
+## (PRa, MTa) -> NRa
+
+### Preliminary study 
+
+<!-- {.tabset .tabset-fade .tabset-pills} -->
+
+1. Use
+    - the dose of NRa data set
+    - the MAP point estimator of `step_by_step_uptoKE3_PRa*.stanFit`
+to predict
+    - `CIa_pred`
+    - `MTa_pred`
+    - `PRa_pred`
+1. Plot `NRa` wrt `PRa_pred`
+1. Plot `NRa` wrt `MTa_pred`
+1. 3D Plot `NRa` wrt `PRa_pred` and `MTa_pred`
+
+#### Rotenone 
+
+<!-- {.tabset .tabset-fade .tabset-pills} -->
+
+##### Load previous fit
+
+**Data**
+
+```{r}
+source(glob_params$f.RScript("CPDs.R"))
+source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R'))
+tmp.chemi = "Rotenone"
+tmp.data.KE1 = KE1.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE2 = KE2.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE3 = KE3.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE4 = KE4.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+```
+
+**Fit**
+
+```{r include=T, cache = FALSE, results='hide'}
+tmp.stanfile.name = "step_by_step_uptoKE3_PRa_Hierarchical_Exp"
+
+f.stanFit.filter(pattern = tmp.stanfile.name,
+                 chemi = tmp.chemi,
+                 extension = "stanFit")
+tmp.stanFit.ts = f.stanFit.filter.timestamp(pattern = tmp.stanfile.name,
+                                            chemi = tmp.chemi,
+                           newest.first = T)
+tmp.stanFit.ts
+
+# tmp.stanFit.name = f.stanFit.filter(pattern = tmp.stanFit.ts[1],
+#                                     chemi = tmp.chemi,
+#                                     extension = "stanFit")
+# tmp.stanFit.name
+tmp.stanFit.name = "step_by_step_uptoKE3_PRa_Hierarchical_Exp-ts_1909041546-chemi_Rotenone-chain_3-iter_10000-seed_1909041546-nEffMin_8-rHatMax100_116.stanFit"
+
+fit_step_by_step_uptoKE3_PRa_Hierarchical_Exp =
+  readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name))
+```
+
+```{r}
+tmp.fit = fit_step_by_step_uptoKE3_PRa_Hierarchical_Exp
+
+p.pars.CIa = c("CIa_min" ,
+               "CIa_max" ,
+               "Par_CIa_50" ,
+               "log_Par_CIa_50",
+               "k_CIa" ,
+               "sigma_CIa")
+
+p.pars.MTa = c("beta_MTa",
+               "beta_0_MTa",
+               "sigma_MTa")
+
+p.pars.PRa = c( "mean_PRa_max",
+                "sd_PRa_max",
+                "PRa_max_rep1",
+                "PRa_max_rep2",
+                "PRa_max_rep3",
+                "PRa_max_rep4",
+                "tox_MTa_min_PRa",
+                # "q_PRa",
+                "k_PRa",
+                "sigma_PRa")
+
+tmp.parsName = c(p.pars.CIa,
+                 p.pars.MTa,
+                 p.pars.PRa,
+
+                 "lp__")
+
+la_all = as.data.frame(rstan::extract(tmp.fit, pars = tmp.parsName))
+
+la.map_all = la_all[which.max(la_all$lp__),]
+
+
+la.summary_all = summary(tmp.fit,
+                         probs = c(0.05, 0.95),
+                         pars = tmp.parsName)$summary %>% as.data.frame()
+
+la.summary_all$MAP = la.map_all %>% as.matrix() %>% c()
+la.mean_all = la.summary_all["mean"] %>% t() %>% as.data.frame()
+
+la.summary_all = la.summary_all %>% select(MAP, mean,se_mean, sd, `5%`, `95%`,n_eff,Rhat)
+
+# options("scipen"= 2,digits=5)
+# options("scipen"= 0,digits=7)
+la.summary_all %>% round(.,digits = 3) %>%  DT::datatable(.,options = list(pageLength = dim(.)[1]))
+```
+
+
+The stanFit used in this report corresponds to
+
+- `r tmp.stanFit.name[1]`
+
+```{r}
+options("scipen"= 6, digits=2)
+tmp.est.ponct = la.map_all
+# tmp.est.ponct = la.mean_all
+
+# Parameters of stanFit for CIa
+tmp.pars_CIa = list(y_min     = tmp.est.ponct$CIa_min,
+                    y_max     = tmp.est.ponct$CIa_max,
+                    x_50      = tmp.est.ponct$log_Par_CIa_50,
+                    k         = tmp.est.ponct$k_CIa)
+tmp.pars_MTa = list(beta     = tmp.est.ponct$beta_MTa,
+                    beta_0   = tmp.est.ponct$beta_0_MTa)
+tmp.pars_PRa = list(y_max     = tmp.est.ponct$mean_PRa_max,
+                    x_tox_min = tmp.est.ponct$tox_MTa_min_PRa,
+                    k         = tmp.est.ponct$k_PRa )
+# Predictions
+
+p.data = tmp.data.KE4
+
+p.data$CIa_pred = log(p.data$concentration_MuMol) %>%
+    f.link.lgstc(.,
+                 params = tmp.pars_CIa)
+
+p.data$MTa_pred =
+  f.link.linear(x = p.data$CIa_pred,
+                params = tmp.pars_MTa) %>%
+  f.link.truncation(., lower = 0, upper = 120)
+
+p.data$PRa_pred = f.link.exp_tox_min(p.data$MTa_pred,
+                                     params = tmp.pars_PRa)
+```
+
+----
+
+----
+
+##### NRa wrt MTa
+
+```{r}
+ggplot(data = p.data,
+           aes(x = MTa_pred,
+               y = Neurite_Area)) +
+  geom_point(aes(colour = replication)) +
+    scale_x_continuous(limit=c(0,120)) +
+    scale_y_continuous(limit=c(0,150),oob=squish) +
+  geom_line(aes(group = replication, colour = replication)) +
+  ggtitle("NRa wrt MTa")
+```
+
+
+
+----
+
+----
+
+##### NRa wrt PRa
+
+```{r}
+ggplot(data = p.data,
+           aes(x = PRa_pred,
+               y = Neurite_Area)) +
+  geom_point(aes(colour = replication)) +
+    scale_x_continuous(limit=c(0,120)) +
+    scale_y_continuous(limit=c(0,150),oob=squish)  +
+  ggtitle("NRa wrt PRa")
+```
+
+----
+
+----
+
+##### NRa wrt MTa and PRa
+
+```{r}
+library(rgl)
+
+nrep  = p.data$replication %>% unique %>% length()
+repID = p.data$replication %>% as.factor() %>% as.numeric()
+xdata = p.data$MTa_pred
+ydata = p.data$PRa_pred
+zdata = p.data$Neurite_Area
+xlims = c(0, max(xdata))
+ylims = c(0, max(ydata))
+zlims = c(0, max(zdata))
+
+open3d()
+par3d(windowRect=c(20, 60, 770, 810))
+myzoom = 1.2
+myexpand = 1.05
+my.userMatrix = matrix(
+    c(0.86628413, -0.4994070, 0.01201642,    0,
+      0.04811093,  0.1073487, 0.99305671,    0,
+     -0.49722946, -0.8596911, 0.11702148,    0,
+      0.00000000,  0.0000000, 0.00000000,    1), byrow=T, 4, 4)
+
+par3d(family="sans", cex=1, FOV=30, ignoreExtent=F)
+
+plot3d(x=xdata, y=ydata, z=zdata,
+       type="s", # you can set to "n" for a blank plot
+       size=1,
+       col= rainbow(nrep)[repID],
+       xlab="", ylab="", zlab="",
+       aspect=c(1,1,1), axes=F, box=F, expand=myexpand,
+       xlim=xlims, ylim=ylims, zlim=zlims)
+
+## add bounding box
+box3d()
+  axes3d(edges=c('x--', 'y--', 'z-+'))
+
+text3d(x=  xlims[2]/2, y= -ylims[2]/9  , z= -zlims[2]/9  , "MTa_pred_MAP"  , cex=1.4, col="black")
+text3d(x= -xlims[2]/6, y=  ylims[2]/2  , z= -zlims[2]/6  , "PRa_pred_MAP"  , cex=1.4, col="black")
+text3d(x= -xlims[2]/5, y=  ylims[2]*6/5, z=  zlims[2]/2  , "Neurite_Area"  , cex=1.4, col="black")
+
+rglwidget()
+while (rgl.cur() > 0) { rgl.close()}
+
+rm(nrep, repID, xdata, ydata, zdata, xlims, ylims, zlims)
+```
+
+
+
+----
+
+----
+
+#### Deguelin 
+
+<!-- {.tabset .tabset-fade .tabset-pills} -->
+
+##### Load previous fit
+
+**Data**
+
+```{r}
+source(glob_params$f.RScript("CPDs.R"))
+source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R'))
+tmp.chemi = "Deguelin"
+tmp.data.KE1 = KE1.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE2 = KE2.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE3 = KE3.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE4 = KE4.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+```
+
+**Fit**
+
+```{r include=T, cache = FALSE, results='hide'}
+tmp.stanfile.name = "step_by_step_uptoKE3_PRa_Hierarchical_Exp"
+
+f.stanFit.filter(pattern = tmp.stanfile.name,
+                 chemi = tmp.chemi,
+                 extension = "stanFit")
+tmp.stanFit.ts = f.stanFit.filter.timestamp(pattern = tmp.stanfile.name,
+                                            chemi = tmp.chemi,
+                           newest.first = T)
+tmp.stanFit.ts
+
+# tmp.stanFit.name = f.stanFit.filter(pattern = tmp.stanFit.ts[1],
+#                                     chemi = tmp.chemi,
+#                                     extension = "stanFit")
+# tmp.stanFit.name
+tmp.stanFit.name = "step_by_step_uptoKE3_PRa_Hierarchical_Exp-ts_1909041546-chemi_Deguelin-chain_3-iter_10000-seed_1909041546-nEffMin_2-rHatMax100_1442.stanFit"
+
+fit_step_by_step_uptoKE3_PRa_Hierarchical_Exp =
+  readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name))
+```
+
+```{r}
+tmp.fit = fit_step_by_step_uptoKE3_PRa_Hierarchical_Exp
+
+p.pars.CIa = c("CIa_min" ,
+               "CIa_max" ,
+               "Par_CIa_50" ,
+               "log_Par_CIa_50",
+               "k_CIa" ,
+               "sigma_CIa")
+
+p.pars.MTa = c("beta_MTa",
+               "beta_0_MTa",
+               "sigma_MTa")
+
+p.pars.PRa = c( "mean_PRa_max",
+                "sd_PRa_max",
+                "PRa_max_rep1",
+                "PRa_max_rep2",
+                "PRa_max_rep3",
+                "PRa_max_rep4",
+                "tox_MTa_min_PRa",
+                # "q_PRa",
+                "k_PRa",
+                "sigma_PRa")
+
+tmp.parsName = c(p.pars.CIa,
+                 p.pars.MTa,
+                 p.pars.PRa,
+
+                 "lp__")
+
+la_all = as.data.frame(rstan::extract(tmp.fit, pars = tmp.parsName))
+
+la.map_all = la_all[which.max(la_all$lp__),]
+
+
+la.summary_all = summary(tmp.fit,
+                         probs = c(0.05, 0.95),
+                         pars = tmp.parsName)$summary %>% as.data.frame()
+
+la.summary_all$MAP = la.map_all %>% as.matrix() %>% c()
+la.mean_all = la.summary_all["mean"] %>% t() %>% as.data.frame()
+
+la.summary_all = la.summary_all %>% select(MAP, mean,se_mean, sd, `5%`, `95%`,n_eff,Rhat)
+
+# options("scipen"= 2,digits=5)
+# options("scipen"= 0,digits=7)
+la.summary_all %>% round(.,digits = 3) %>%  DT::datatable(.,options = list(pageLength = dim(.)[1]))
+```
+
+
+
+
+The stanFit used in this report corresponds to
+
+- `r tmp.stanFit.name[1]`
+
+```{r}
+options("scipen"= 6, digits=2)
+tmp.est.ponct = la.map_all
+# tmp.est.ponct = la.mean_all
+
+# Parameters of stanFit for CIa
+tmp.pars_CIa = list(y_min     = tmp.est.ponct$CIa_min,
+                    y_max     = tmp.est.ponct$CIa_max,
+                    x_50      = tmp.est.ponct$log_Par_CIa_50,
+                    k         = tmp.est.ponct$k_CIa)
+tmp.pars_MTa = list(beta     = tmp.est.ponct$beta_MTa,
+                    beta_0   = tmp.est.ponct$beta_0_MTa)
+tmp.pars_PRa = list(y_max     = tmp.est.ponct$mean_PRa_max,
+                    x_tox_min = tmp.est.ponct$tox_MTa_min_PRa,
+                    k         = tmp.est.ponct$k_PRa )
+# Predictions
+
+p.data = tmp.data.KE4
+
+p.data$CIa_pred = log(p.data$concentration_MuMol) %>%
+    f.link.lgstc(.,
+                 params = tmp.pars_CIa)
+
+p.data$MTa_pred =
+  f.link.linear(x = p.data$CIa_pred,
+                params = tmp.pars_MTa) %>%
+  f.link.truncation(., lower = 0, upper = 120)
+
+p.data$PRa_pred = f.link.exp_tox_min(p.data$MTa_pred,
+                                     params = tmp.pars_PRa)
+```
+
+----
+
+----
+
+##### NRa wrt MTa
+
+```{r}
+ggplot(data = p.data,
+           aes(x = MTa_pred,
+               y = Neurite_Area)) +
+  geom_point(aes(colour = replication)) +
+    scale_x_continuous(limit=c(0,120)) +
+    scale_y_continuous(limit=c(0,150),oob=squish) +
+  geom_line(aes(group = replication, colour = replication)) +
+  ggtitle("NRa wrt MTa")
+```
+
+
+----
+
+----
+
+##### NRa wrt PRa
+
+```{r}
+ggplot(data = p.data,
+           aes(x = PRa_pred,
+               y = Neurite_Area)) +
+  geom_point(aes(colour = replication)) +
+    scale_x_continuous(limit=c(0,120)) +
+    scale_y_continuous(limit=c(0,150),oob=squish)  +
+    geom_line(aes(group = replication, colour = replication)) +
+  ggtitle("NRa wrt PRa")
+```
+
+----
+
+----
+
+##### NRa wrt MTa and PRa
+
+```{r}
+library(rgl)
+
+nrep  = p.data$replication %>% unique %>% length()
+repID = p.data$replication %>% as.factor() %>% as.numeric()
+xdata = p.data$MTa_pred
+ydata = p.data$PRa_pred
+zdata = p.data$Neurite_Area
+xlims = c(0, max(xdata))
+ylims = c(0, max(ydata))
+zlims = c(0, max(zdata))
+
+open3d()
+par3d(windowRect=c(20, 60, 770, 810))
+myzoom = 1.2
+myexpand = 1.05
+my.userMatrix = matrix(
+    c(0.86628413, -0.4994070, 0.01201642,    0,
+      0.04811093,  0.1073487, 0.99305671,    0,
+     -0.49722946, -0.8596911, 0.11702148,    0,
+      0.00000000,  0.0000000, 0.00000000,    1), byrow=T, 4, 4)
+
+par3d(family="sans", cex=1, FOV=30, ignoreExtent=F)
+
+plot3d(x=xdata, y=ydata, z=zdata,
+       type="s", # you can set to "n" for a blank plot
+       size=1,
+       col= rainbow(nrep)[repID],
+       xlab="", ylab="", zlab="",
+       aspect=c(1,1,1), axes=F, box=F, expand=myexpand,
+       xlim=xlims, ylim=ylims, zlim=zlims)
+
+## add bounding box
+box3d()
+  axes3d(edges=c('x--', 'y--', 'z-+'))
+
+text3d(x=  xlims[2]/2, y= -ylims[2]/9  , z= -zlims[2]/9  , "MTa_pred_MAP"  , cex=1.4, col="black")
+text3d(x= -xlims[2]/6, y=  ylims[2]/2  , z= -zlims[2]/6  , "PRa_pred_MAP"  , cex=1.4, col="black")
+text3d(x= -xlims[2]/5, y=  ylims[2]*6/5, z=  zlims[2]/2  , "Neurite_Area"  , cex=1.4, col="black")
+
+rglwidget()
+while (rgl.cur() > 0) { rgl.close()}
+
+rm(nrep, repID, xdata, ydata, zdata, xlims, ylims, zlims)
+```
+
+----
+
+----
+
+### Insights
+
+**Wang and Frederic's proposition :**
+
+- MTa and PRa are both in the AOP of interest.
+
+- PRa is child of MTa so that in principle PRa appears later than MTa. However, PRa moves much faster than MTa in the sens that starting from 0 (or some inestimable baseline, due to the limite of current dataset), PRa arrives earlier at its saturation level (normalised to 100%) than MTa.
+
+**Frederic and Wang suggest that both PRa and MTa are responsible for Neurite_Area increasing.**
+
+- PRa affects the KE:Neurite Area in early stage and holds its effect after PRa's saturation
+- MTa also affects the KE:Neurit Area, but in later stage.
+
+Regarding to the upper visualisations based on the following materials and previous results, <span style="color:red">these "two stages" are well seperated.</span>
+
+- Data on KE4 for Rotenon and Deguelin
+- Estimates for Rotenon up to KE3 :
+    - "step_by_step_uptoKE3_PRa_Hierarchical_Exp-ts_1909041546-chemi_Rotenone-chain_3-iter_10000-seed_1909041546-nEffMin_8-rHatMax100_116.stanFit"
+- estimates for Deguelin up to KE3 :
+    - "step_by_step_uptoKE3_PRa_Hierarchical_Exp-ts_1909041546-chemi_Deguelin-chain_3-iter_10000-seed_1909041546-nEffMin_2-rHatMax100_1442.stanFit"
+
+### Modelling NRa | MTa, PRa
+
+Wang did some preliminary analyses. He suggests modelling the variance of error may help avoid identifiability problem. For example : $\sigma = \beta * NRa$ with $\beta$ a hyperparameter.
+
+$$\begin{equation}
+\begin{split}
+y_{x_1} &= \begin{cases}
+y_{max, x_1} \left(1 - e^{-k_{x_1}(x_1 - x_{1,min})} \right) & \text{if $x_1>x_{1,min}$} \\
+0   & \text{otherwise}
+\end{cases}\\
+y_{x_2} &= \begin{cases}
+y_{max, x_2} \left(1 - e^{-k_{x_2}(x_2 - x_{2,min})} \right) & \text{if $x_2>x_{2,min}$} \\
+0   & \text{otherwise}
+\end{cases}\\
+y &= y_{x_1} + y_{x_2} \\
+y_{obs} & \sim \mathcal{N}(y, \sigma_{max,y}^2 \frac{y}{100})
+\end{split}
+\end{equation}$$
+
+Here variables are
+
+- $y$ : KE of interest : NRa
+- $x_1$ : MTa Mitochondrial activity
+- $x_2$ : PRa Proteostasis activity
+
+Parameters are 
+
+- $k_{x_1}$, $k_{x_2}$ : 2 parameters
+- $x_{1,min}$, $x_{2,min}$ : 2 parameters
+- $y_{max, x_1} > 0$, $y_{max, x_2} = 100 - y_{max, x_1} > 0$ : 1 parameter
+- $\sigma_{max,y}$ : 1 parameter
+
+6 paramters in total.
+
+## Cleanup
+
+```{r}
+cleanup()
+rm(p.data)
+```
+
+# Analysis of fit
+
+## Rotenone 
+
+<!-- {.tabset .tabset-fade .tabset-pills} -->
+
+### Load previous fit
+
+```{r include=T, cache = FALSE, results='hide'}
+tmp.stanfile.name = "step_by_step_uptoKE4_PRa_Hierarchical_Exp_NRa_two_parents_mixExp_withMeanMaxPRa"
+tmp.chemi = "Rotenone"
+
+f.stanFit.filter(pattern = tmp.stanfile.name, 
+                 chemi = tmp.chemi, 
+                 extension = "stanFit")
+tmp.stanFit.ts = f.stanFit.filter.timestamp(pattern = tmp.stanfile.name,
+                                            chemi = tmp.chemi,
+                           newest.first = T)
+tmp.stanFit.ts
+
+tmp.stanFit.name = f.stanFit.filter(pattern = tmp.stanFit.ts[1],
+                                    chemi = tmp.chemi, 
+                                    extension = "stanFit")
+tmp.stanFit.name
+
+fit_step_by_step_uptoKE4_PRa_Hierarchical_Exp_NRa_two_parents_mixExp_withMeanMaxPRa =
+  readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name[1]))
+```
+
+The stanFit used in this report corresponds to 
+
+- `r tmp.stanFit.name[1]`
+
+### Posterior summary
+
+```{r eval = F}
+fit_step_by_step_uptoKE4_PRa_Hierarchical_Exp_NRa_two_parents_mixExp_withMeanMaxPRa
+check_hmc_diagnostics(fit_step_by_step_uptoKE4_PRa_Hierarchical_Exp_NRa_two_parents_mixExp_withMeanMaxPRa)
+```
+
+
+```{r}
+tmp.fit = fit_step_by_step_uptoKE4_PRa_Hierarchical_Exp_NRa_two_parents_mixExp_withMeanMaxPRa
+
+p.pars.CIa = c("y_min_CIa",
+               "y_max_CIa",
+               "k_CIa",
+               "x_50_CIa",
+               "log_x_50_CIa",
+               "sigma_CIa")
+
+p.pars.MTa = c("beta_MTa",
+               "beta_0_MTa",
+               "sigma_MTa")
+
+p.pars.PRa = c("mean_y_max_PRa",
+               "sd_y_max_PRa",
+               "y_max_rep_PRa",
+               "k_PRa",
+               "x_MTa_tox_min_PRa",
+               "sigma_PRa")
+
+p.pars.NRa = c("y_max_p_NRa",
+               "x_MTa_tox_min_NRa",
+               "x_PRa_tox_min_NRa",
+               "k_MTa_NRa",     
+               "k_PRa_NRa",     
+               "sigma_NRa")
+
+tmp.parsName = c(p.pars.CIa,
+                 p.pars.MTa,
+                 p.pars.PRa,
+                 p.pars.NRa,
+                 
+                 "lp__")
+
+
+la_all = as.data.frame(rstan::extract(tmp.fit, pars = tmp.parsName))
+
+la.map_all = la_all[which.max(la_all$lp__),]
+
+
+la.summary_all = summary(tmp.fit,
+                         probs = c(0.05, 0.95),
+                         pars = tmp.parsName)$summary %>% as.data.frame()
+
+la.summary_all$MAP = la.map_all %>% as.matrix() %>% c()
+la.mean_all = la.summary_all["mean"] %>% t() %>% as.data.frame()
+
+la.summary_all = la.summary_all %>% select(MAP, mean,se_mean, sd, `5%`, `95%`,n_eff,Rhat)
+
+# options("scipen"= 2,digits=5)
+# options("scipen"= 0,digits=7)
+la.summary_all %>% round(.,digits = 3) %>%  DT::datatable(.,options = list(pageLength = dim(.)[1]))
+```
+### Diagnostic 
+
+<!-- {.tabset .tabset-fade .tabset-pills} -->
+
+```{r}
+posterior2 <- rstan::extract(tmp.fit,
+                             # inc_warmup = TRUE,
+                             permuted = FALSE)
+library(bayesplot)
+color_scheme_set("mix-blue-pink")
+```
+
+#### ShinyStan
+
+```{r eval=F, echo=T}
+shinystan::launch_shinystan(tmp.fit)
+```
+
+
+#### CIa 
+
+##### Check MCMC samples only 
+
+<!-- {.tabset .tabset-fade .tabset-pills} -->
+
+###### Traceplots
+
+```{r}
+stan_trace(tmp.fit,
+           pars = p.pars.CIa,ncol = 2)
+```
+
+###### Posterior distribution
+
+```{r}
+stan_hist(tmp.fit,
+          pars = p.pars.CIa,ncol = 2)
+```
+
+
+###### Autocorrelation
+
+```{r}
+stan_ac(tmp.fit,
+        pars = p.pars.CIa,ncol = 2)
+```
+
+##### Check fit with data
+
+Load data
+
+```{r include=F}
+source(glob_params$f.RScript("CPDs.R"))
+source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R'))
+
+tmp.chemi = "Rotenone"
+# tmp.chemi = "Deguelin"
+
+tmp.data.KE1 = KE1.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE2 = KE2.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE3 = KE3.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE4 = KE4.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+```
+
+###### Fit with Predidctions
+
+```{r}
+tmp.est.ponct = la.map_all
+p.data = tmp.data.KE1
+
+set.seed(1)
+post_sample.size = 100
+# Random seed
+post_sample.CIa = tmp.fit %>% 
+  rstan::extract(., 
+                 pars = c(p.pars.CIa,"lp__"),
+                 permuted = T) %>% 
+  data.frame() %>% 
+  sample_n(size = post_sample.size) %>% 
+  mutate(replication = "post_sample") %>% 
+  bind_rows(select(tmp.est.ponct, p.pars.CIa,"lp__") %>% 
+              mutate(replication = "map"))
+
+p.data_pred =
+  post_sample.CIa %>%
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>%
+  tidyr::crossing(concentration_MuMol = exp(seq(-10, 3, 0.1))) %>%    # repeat each row for every occurence of x
+  mutate(c1_activity = f.link.lgstc(
+    x = log(concentration_MuMol),
+    params = list(
+      y_min     = y_min_CIa,
+      y_max     = y_max_CIa,
+      x_50      = x_50_CIa %>% log(),
+      k         = k_CIa
+    )
+  ))   
+
+p.data = p.data %>% mutate(curve = 0) %>% 
+  select(concentration_MuMol, c1_activity, replication, curve) %>%
+  bind_rows(p.data_pred %>%
+              select(concentration_MuMol, c1_activity, replication, curve))
+
+
+# Plot
+ggplot(data = p.data, 
+       aes(x = concentration_MuMol, 
+           y = c1_activity, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
+  theme(legend.position = "none") +
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), alpha = 1, colour = "red") +
+  geom_point(data = . %>% filter(curve == 0) ) +
+  scale_y_continuous(limit=c(0,120),oob=censor) +
+  scale_x_continuous(trans = "log10")
+
+ls(pattern = glob2rx("p.data*", trim.head = T)) %>% rm()
+```
+
+
+#### MTa
+
+##### Check MCMC samples only 
+
+<!-- {.tabset .tabset-fade .tabset-pills} -->
+###### Traceplots
+
+```{r}
+stan_trace(tmp.fit,
+           pars = p.pars.MTa,ncol = 2)
+```
+
+###### Posterior distribution
+
+```{r}
+stan_hist(tmp.fit,
+          pars = p.pars.MTa,ncol = 2)
+```
+
+
+###### Autocorrelation
+
+```{r}
+stan_ac(tmp.fit,
+        pars = p.pars.MTa,ncol = 2)
+```
+
+##### Check fit with data
+
+###### Fit wrt raw data : x -> MTa
+
+```{r}
+p.data = tmp.data.KE2
+
+p.data.dose.range = p.data$concentration_MuMol %>% log() %>% range()
+p.data.dose.range = range(
+  ceiling(p.data.dose.range),
+  floor(p.data.dose.range)
+)
+
+
+set.seed(1)
+post_sample.size = 100
+
+# Random seed
+post_sample.MTa = tmp.fit %>% 
+  rstan::extract(., 
+                 pars = c(p.pars.CIa,
+                          p.pars.MTa,
+                          "lp__"),
+                 permuted = T) %>% 
+  data.frame() %>% 
+  sample_n(size = post_sample.size) %>% 
+  mutate(replication = "post_sample") %>% 
+  bind_rows(select(tmp.est.ponct, 
+                   p.pars.CIa,
+                   p.pars.MTa,
+                   "lp__") %>% 
+              mutate(replication = "map"))
+
+p.data_pred =
+  post_sample.MTa %>%
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% # add index for each post_sample
+  tidyr::crossing(concentration_MuMol = exp(seq(p.data.dose.range[1], p.data.dose.range[2], 0.05))) %>%  # repeat each row for every occurence of x
+  mutate(c1_activity = # Predict CIa with correponding post_sample
+           f.link.lgstc(
+             x = log(concentration_MuMol),
+             params = list(
+               y_min     = y_min_CIa,
+               y_max     = y_max_CIa,
+               x_50      = x_50_CIa %>% log(),
+               k         = k_CIa
+             )
+           )) %>%
+  mutate(mito_resp = # Predict MTa with correponding post_sample
+           f.link.linear(x = c1_activity,
+                         params = list(beta   = beta_MTa,
+                                       beta_0 = beta_0_MTa)
+                         ) %>%
+           f.link.truncation(., lower = 0, upper = 120)
+  )
+
+p.data = p.data %>% 
+  mutate(curve = 0) %>% # curve == 0 corresponds to raw data
+  select(concentration_MuMol, mito_resp, replication, curve) %>% 
+  bind_rows(p.data_pred %>%
+              select(concentration_MuMol, mito_resp, replication, curve))
+
+
+# Plot
+ggplot(data = p.data, 
+       aes(x = concentration_MuMol, 
+           y = mito_resp, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
+  theme(legend.position = "none") +
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), alpha = 1, colour = "red") +
+  geom_point(data = . %>% filter(curve == 0) ) +
+  scale_y_continuous(limit=c(0,120),oob=squish) +
+  scale_x_continuous(trans = "log10")
+
+```
+
+
+
+#### PRa
+
+##### Check MCMC samples only 
+
+<!-- {.tabset .tabset-fade .tabset-pills} -->
+
+###### Traceplots
+
+```{r}
+stan_trace(tmp.fit,
+           pars = p.pars.PRa)
+```
+
+###### Posterior distribution
+
+```{r}
+stan_hist(tmp.fit,
+          pars = p.pars.PRa)
+```
+
+
+###### Autocorrelation
+
+```{r}
+stan_ac(tmp.fit,
+        pars = p.pars.PRa)
+```
+
+##### Check fit with data
+
+###### Fit wrt raw data : x -> PRa
+
+####### data with Fit for existing "individuals" (that is replication groups)
+
+```{r}
+p.data = tmp.data.KE3
+
+p.data.dose.range = p.data$concentration_MuMol %>% log() %>% range()
+p.data.dose.range = range(
+  ceiling(p.data.dose.range),
+  floor(p.data.dose.range)
+)
+
+set.seed(1)
+post_sample.size = 100
+
+names(tmp.fit)
+# Random seed
+post_sample.PRa = 
+  tmp.fit %>% 
+  rstan::extract(., 
+                 pars = c(p.pars.CIa,
+                          p.pars.MTa,
+                          p.pars.PRa,
+                          "lp__"),
+                 permuted = T) %>% 
+  data.frame() %>% 
+  sample_n(size = post_sample.size) %>% 
+  mutate(replication = "post_sample") %>% 
+  bind_rows(tmp.est.ponct %>% 
+              mutate(replication = "map"))
+
+# post_sample.PRa %>% names
+p.data_pred =
+  post_sample.PRa %>%
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% # add index for each post_sample
+  gather(y_max_rep_PRa.1, y_max_rep_PRa.2, y_max_rep_PRa.3, y_max_rep_PRa.4, 
+         key = "replication", 
+         value = y_max_PRa) %>% 
+  mutate(replication = replication %>% str_sub(., -1)) %>% 
+  tidyr::crossing(concentration_MuMol = exp(seq(p.data.dose.range[1], p.data.dose.range[2], 0.1))) %>%  # repeat each row for every occurence of x
+  mutate(c1_activity = # Predict CIa with correponding post_sample
+           f.link.lgstc(
+             x = log(concentration_MuMol),
+             params = list(
+               y_min     = y_min_CIa,
+               y_max     = y_max_CIa,
+               x_50      = log_x_50_CIa,
+               k         = k_CIa))
+         ) %>%
+  mutate(mito_resp = # Predict MTa with correponding post_sample
+           f.link.linear(x = c1_activity,
+                         params = list(beta   = beta_MTa,
+                                       beta_0 = beta_0_MTa)
+           ) %>%
+           f.link.truncation(., lower = 0, upper = 120)
+         ) %>%
+  mutate(Prot_acti = # Predict PRa with correponding post_sample
+           f.link.exp_tox_min(
+             x = mito_resp,
+             params = list(
+               y_max = y_max_PRa,
+               x_tox_min = x_MTa_tox_min_PRa,
+               k = k_PRa
+             )
+           )) 
+
+
+p.data = p.data %>% 
+  mutate(curve = 0) %>% # curve == 0 corresponds to raw data
+  select(concentration_MuMol, Prot_acti, replication, curve) %>% 
+  mutate(replication = replication %>% str_sub(., -1)) %>% 
+  bind_rows(p.data_pred %>%
+              select(concentration_MuMol, Prot_acti, replication, curve))
+
+
+# Plot
+ggplot(data = p.data, 
+       aes(x = concentration_MuMol, 
+           y = Prot_acti, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = interaction(curve,replication)), alpha = 0.05) + 
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), aes(group = interaction(curve,replication)), alpha = 1) +
+  geom_point(data = . %>% filter(curve == 0) ) +
+  scale_y_continuous(limit=c(0,150),oob=squish) +
+  scale_x_continuous(trans = "log10") +
+  theme(legend.position = "none")
+```
+
+####### Data with population level predictions
+
+```{r}
+p.data_pred =
+  post_sample.PRa %>%
+  select(- y_max_rep_PRa.1, - y_max_rep_PRa.2, - y_max_rep_PRa.3, - y_max_rep_PRa.4) %>% 
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% # add index for each post_sample
+  mutate(y_max_PRa = pmap(list(n = 1, mean = mean_y_max_PRa, sd = sd_y_max_PRa), rnorm) %>% unlist()) %>% 
+  tidyr::crossing(concentration_MuMol = exp(seq(p.data.dose.range[1], p.data.dose.range[2], 0.1))) %>%  # repeat each row for every occurence of x
+  mutate(c1_activity = # Predict CIa with correponding post_sample
+           f.link.lgstc(
+             x = log(concentration_MuMol),
+             params = list(
+               y_min     = y_min_CIa,
+               y_max     = y_max_CIa,
+               x_50      = log_x_50_CIa,
+               k         = k_CIa))
+         ) %>%
+  mutate(mito_resp = # Predict MTa with correponding post_sample
+           f.link.linear(x = c1_activity,
+                         params = list(beta   = beta_MTa,
+                                       beta_0 = beta_0_MTa)
+           ) %>%
+           f.link.truncation(., lower = 0, upper = 120)
+         ) %>%
+  mutate(Prot_acti = # Predict PRa with correponding post_sample
+           f.link.exp_tox_min(
+             x = mito_resp,
+             params = list(
+               y_max = y_max_PRa,
+               x_tox_min = x_MTa_tox_min_PRa,
+               k = k_PRa
+             )
+           )) %>% 
+  mutate(replication = "0")
+
+p.data = tmp.data.KE3 %>% 
+  mutate(curve = 0) %>% # curve == 0 corresponds to raw data
+  select(concentration_MuMol, Prot_acti, replication, curve) %>% 
+  mutate(replication = replication %>% str_sub(., -1)) %>% 
+  bind_rows(p.data_pred %>%
+              select(concentration_MuMol, Prot_acti, replication, curve))
+
+ggplot(data = p.data, 
+       aes(x = concentration_MuMol, 
+           y = Prot_acti, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
+  theme(legend.position = "none") +
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), aes(group = curve), alpha = 1) +
+  geom_point(data = . %>% filter(curve == 0) ) +
+  scale_y_continuous(limit=c(0,150),oob=squish) +
+  scale_x_continuous(trans = "log10")
+
+```
+
+###### Prediction MTa -> PRa
+
+```{r}
+p.data_pred =
+  post_sample.PRa %>%
+  select(- y_max_rep_PRa.1, - y_max_rep_PRa.2, - y_max_rep_PRa.3, - y_max_rep_PRa.4) %>% 
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% # add index for each post_sample
+  mutate(y_max_PRa = pmap(list(n = 1, mean = mean_y_max_PRa, sd = sd_y_max_PRa), rnorm) %>% unlist()) %>% 
+  tidyr::crossing(mito_resp = seq(0, 100, 0.05)) %>%  # repeat each row for every occurence of x
+  mutate(Prot_acti = # Predict PRa with correponding post_sample
+           f.link.exp_tox_min(
+             x = mito_resp,
+             params = list(
+               y_max = y_max_PRa,
+               x_tox_min = x_MTa_tox_min_PRa,
+               k = k_PRa
+             )
+           ))
+
+
+ggplot(data = p.data_pred, 
+       aes(x = mito_resp, 
+           y = Prot_acti, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
+  theme(legend.position = "none") +
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), alpha = 1, colour = "red") +
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  labs(y = "PRa_pred")
+```
+
+
+#### NRa
+
+##### Check MCMC samples only 
+
+<!-- {.tabset .tabset-fade .tabset-pills} -->
+
+###### Traceplots
+
+```{r}
+stan_trace(tmp.fit,
+           pars = p.pars.NRa)
+```
+
+###### Posterior distribution
+
+```{r}
+stan_hist(tmp.fit,
+          pars = p.pars.NRa)
+```
+
+
+###### Autocorrelation
+
+```{r}
+stan_ac(tmp.fit,
+        pars = p.pars.NRa)
+```
+
+##### Check fit with data
+
+###### Fit wrt raw data : x -> NRa
+
+```{r}
+p.data = tmp.data.KE4
+
+p.data.dose.range = p.data$concentration_MuMol %>% log() %>% range()
+p.data.dose.range = range(
+  ceiling(p.data.dose.range),
+  floor(p.data.dose.range)
+)
+
+set.seed(1)
+post_sample.size = 100
+
+# Random seed
+post_sample.NRa = tmp.fit %>% 
+  rstan::extract(., 
+                 pars = c(p.pars.CIa,
+                          p.pars.MTa,
+                          p.pars.PRa,
+                          p.pars.NRa,
+                          "lp__"),
+                 permuted = T) %>% 
+  data.frame() %>% 
+  sample_n(size = post_sample.size) %>% 
+  mutate(replication = "post_sample") %>% 
+  bind_rows(tmp.est.ponct %>% 
+              mutate(replication = "map"))
+
+
+# post_sample.NRa %>% names
+p.data_pred =
+  post_sample.NRa %>%
+  select(- y_max_rep_PRa.1, - y_max_rep_PRa.2, - y_max_rep_PRa.3, - y_max_rep_PRa.4) %>% 
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% # add index for each post_sample
+  mutate(y_max_PRa = pmap(list(n = 1, mean = mean_y_max_PRa, sd = sd_y_max_PRa), rnorm) %>% unlist()) %>% 
+  tidyr::crossing(concentration_MuMol = exp(seq(p.data.dose.range[1], p.data.dose.range[2], 0.05))) %>%  # repeat each row for every occurence of x
+  mutate(c1_activity = # Predict CIa with correponding post_sample
+           f.link.lgstc(
+             x = log(concentration_MuMol),
+             params = list(
+               y_min     = y_min_CIa,
+               y_max     = y_max_CIa,
+               x_50      = log_x_50_CIa,
+               k         = k_CIa))
+         ) %>%
+  mutate(mito_resp = # Predict MTa with correponding post_sample
+           f.link.linear(x = c1_activity,
+                         params = list(beta   = beta_MTa,
+                                       beta_0 = beta_0_MTa)
+           ) %>%
+           f.link.truncation(., lower = 0, upper = 120)
+         ) %>%
+  mutate(Prot_acti = # Predict PRa with correponding post_sample
+           f.link.exp_tox_min(
+             x = mito_resp,
+             params = list(
+               y_max = y_max_PRa,
+               x_tox_min = x_MTa_tox_min_PRa,
+               k = k_PRa
+             )
+           )) %>% 
+  mutate(Neurite_Area = # Predict PRa with correponding post_sample
+           f.link.exp_tox_min(x = Prot_acti, 
+                              params = list(y_max = y_max_p_NRa,
+                                            x_tox_min = x_PRa_tox_min_NRa,
+                                            k = k_PRa_NRa)) + 
+           f.link.exp_tox_min(x = mito_resp,
+                              params = list(y_max = 100 - y_max_p_NRa,
+                                            x_tox_min = x_MTa_tox_min_NRa,
+                                            k = k_MTa_NRa))
+         ) %>% 
+  mutate(replication = "0")
+
+p.data = p.data %>% 
+  mutate(curve = 0) %>% # curve == 0 corresponds to raw data
+  select(concentration_MuMol, Neurite_Area, replication, curve) %>% 
+  mutate(replication = replication %>% str_sub(., -1)) %>% 
+  bind_rows(p.data_pred %>%
+              select(concentration_MuMol, Neurite_Area, replication, curve))
+
+ggplot(data = p.data, 
+       aes(x = concentration_MuMol, 
+           y = Neurite_Area, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
+  theme(legend.position = "none") +
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), aes(group = curve), alpha = 1) +
+  geom_point(data = . %>% filter(curve == 0) ) +
+  scale_y_continuous(limit=c(0,150),oob=squish) +
+  scale_x_continuous(trans = "log10")
+```
+
+
+###### Prediction (MTa -> PRa) -> NRa
+
+```{r}
+p.data_pred =
+  post_sample.NRa %>%
+  select(- y_max_rep_PRa.1, - y_max_rep_PRa.2, - y_max_rep_PRa.3, - y_max_rep_PRa.4) %>% 
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% # add index for each post_sample
+  mutate(y_max_PRa = pmap(list(n = 1, mean = mean_y_max_PRa, sd = sd_y_max_PRa), rnorm) %>% unlist()) %>% 
+  tidyr::crossing(mito_resp = seq(0, 100, 0.05)) %>%  # repeat each row for every occurence of x
+  mutate(Prot_acti = # Predict PRa with correponding post_sample
+           f.link.exp_tox_min(
+             x = mito_resp,
+             params = list(
+               y_max = y_max_PRa,
+               x_tox_min = x_MTa_tox_min_PRa,
+               k = k_PRa
+             )
+           )) %>% 
+  mutate(Neurite_Area = # Predict PRa with correponding post_sample
+           f.link.exp_tox_min(x = Prot_acti, 
+                              params = list(y_max = y_max_p_NRa,
+                                            x_tox_min = x_PRa_tox_min_NRa,
+                                            k = k_PRa_NRa)) + 
+           f.link.exp_tox_min(x = mito_resp,
+                              params = list(y_max = 100 - y_max_p_NRa,
+                                            x_tox_min = x_MTa_tox_min_NRa,
+                                            k = k_MTa_NRa))
+         )
+```
+
+
+####### plot MTa -> NRa
+
+```{r}
+ggplot(data = p.data_pred, 
+       aes(x = mito_resp, 
+           y = Neurite_Area, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
+  theme(legend.position = "none") +
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), alpha = 1, colour = "red") +
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  labs(y = "NRa_pred")
+```
+
+####### Plot PRa -> NRa
+
+```{r}
+ggplot(data = p.data_pred, 
+       aes(x = Prot_acti, 
+           y = Neurite_Area, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
+  theme(legend.position = "none") +
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), alpha = 1, colour = "red") +
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  scale_x_continuous(limit=c(0,150),oob=squish) +
+  labs(y = "NRa_pred")
+```
+
+####### Plots (MTa -> PRa) -> NRa
+
+```{r}
+tmp.est.ponct = la.map_all
+# tmp.est.ponct = la.mean_all
+
+names(la.map_all)
+
+# Parameters of stanFit for CIa
+tmp.pars_CIa = list(y_min     = tmp.est.ponct$y_min_CIa,
+                    y_max     = tmp.est.ponct$y_max_CIa,
+                    x_50      = tmp.est.ponct$log_x_50_CIa,
+                    k         = tmp.est.ponct$k_CIa)
+tmp.pars_MTa = list(beta     = tmp.est.ponct$beta_MTa,
+                    beta_0   = tmp.est.ponct$beta_0_MTa)
+tmp.pars_PRa = list(y_max     = tmp.est.ponct$mean_y_max_PRa,
+                    x_tox_min = tmp.est.ponct$x_MTa_tox_min_PRa,
+                    k         = tmp.est.ponct$k_PRa )
+# Predictions
+
+p.data = tmp.data.KE4
+
+p.data$CIa_pred = log(p.data$concentration_MuMol) %>%
+    f.link.lgstc(.,
+                 params = tmp.pars_CIa)
+
+p.data$MTa_pred =
+  f.link.linear(x = p.data$CIa_pred,
+                params = tmp.pars_MTa) %>%
+  f.link.truncation(., lower = 0, upper = 120)
+
+p.data$PRa_pred = f.link.exp_tox_min(p.data$MTa_pred,
+                                     params = tmp.pars_PRa)
+p.data %>% names
+```
+
+
+```{r}
+nrep  = p.data$replication %>% unique %>% length()
+repID = p.data$replication %>% as.factor() %>% as.numeric()
+xraw  = p.data$MTa_pred
+yraw  = p.data$PRa_pred
+zraw  = p.data$Neurite_Area
+
+xdata = p.data_pred$mito_resp
+ydata = p.data_pred$Prot_acti
+zdata = p.data_pred$Neurite_Area
+xlims = c(0, max(xdata,xraw))
+ylims = c(0, max(ydata,yraw,100))
+zlims = c(0, max(zdata,zraw,100))
+
+open3d()
+par3d(windowRect=c(20, 60, 770, 810))
+myzoom = 1.2
+myexpand = 1.05
+my.userMatrix = matrix(
+    c(0.86628413, -0.4994070, 0.01201642,    0,
+      0.04811093,  0.1073487, 0.99305671,    0,
+     -0.49722946, -0.8596911, 0.11702148,    0,
+      0.00000000,  0.0000000, 0.00000000,    1), byrow=T, 4, 4)
+
+par3d(family="sans", cex=1, FOV=30, ignoreExtent=F)
+
+plot3d(x=NA,
+       y=NA,
+       z=NA,
+       type="n", # you can set to "n" for a blank plot
+       size=1,
+       xlab="", ylab="", zlab="",
+       aspect=c(1,1,1), axes=F, box=F, expand=myexpand,
+       xlim=xlims, ylim=ylims, zlim=zlims)
+
+# rgl::points3d(x=xraw,
+#          y=yraw,
+#          z=zraw,
+#          size=1,
+#          type="s",
+#          col= rainbow(nrep)[repID])
+
+# add bounding box
+box3d()
+  axes3d(edges=c('x--', 'y--', 'z-+'))
+
+text3d(x=  xlims[2]/2, y= -ylims[2]/9  , z= -zlims[2]/9  , "MTa"  , cex=1.4, col="black")
+text3d(x= -xlims[2]/6, y=  ylims[2]/2  , z= -zlims[2]/6  , "PRa"  , cex=1.4, col="black")
+text3d(x= -xlims[2]/5, y=  ylims[2]*6/5, z=  zlims[2]/2  , "NRa"  , cex=1.4, col="black")
+  
+rgl.spheres(x=xraw,
+         y=yraw,
+         z=zraw,
+         size=5,
+         col= rainbow(nrep)[repID])
+
+for(i in 1:post_sample.size){
+  loc.p.data = p.data_pred %>% filter(curve == i)
+  lines3d(x = loc.p.data$mito_resp,
+          y = loc.p.data$Prot_acti,
+          z = loc.p.data$Neurite_Area,
+          color="grey", add = T)
+}
+
+loc.p.data = p.data_pred %>% filter(curve == post_sample.size + 1)
+lines3d(x = loc.p.data$mito_resp,
+        y = loc.p.data$Prot_acti,
+        z = loc.p.data$Neurite_Area,
+        color="red", add = T, lwd = 5)
+
+rglwidget()
+while (rgl.cur() > 0) { rgl.close()}
+```
+
+
+## Deguelin 
+
+<!-- {.tabset .tabset-fade .tabset-pills} -->
+
+### Load previous fit
+
+```{r include=T, cache = FALSE, results='hide'}
+tmp.stanfile.name = "step_by_step_uptoKE4_PRa_Hierarchical_Exp_NRa_two_parents_mixExp_withMeanMaxPRa"
+tmp.chemi = "Deguelin"
+
+f.stanFit.filter(pattern = tmp.stanfile.name, 
+                 chemi = tmp.chemi, 
+                 extension = "stanFit")
+tmp.stanFit.ts = f.stanFit.filter.timestamp(pattern = tmp.stanfile.name,
+                                            chemi = tmp.chemi,
+                           newest.first = T)
+tmp.stanFit.ts
+
+tmp.stanFit.name = f.stanFit.filter(pattern = tmp.stanFit.ts[1],
+                                    chemi = tmp.chemi, 
+                                    extension = "stanFit")
+tmp.stanFit.name
+
+fit_step_by_step_uptoKE4_PRa_Hierarchical_Exp_NRa_two_parents_mixExp_withMeanMaxPRa =
+  readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name[1]))
+```
+
+The stanFit used in this report corresponds to 
+
+- `r tmp.stanFit.name[1]`
+
+### Posterior summary
+
+```{r eval = F}
+fit_step_by_step_uptoKE4_PRa_Hierarchical_Exp_NRa_two_parents_mixExp_withMeanMaxPRa
+check_hmc_diagnostics(fit_step_by_step_uptoKE4_PRa_Hierarchical_Exp_NRa_two_parents_mixExp_withMeanMaxPRa)
+```
+
+
+```{r}
+tmp.fit = fit_step_by_step_uptoKE4_PRa_Hierarchical_Exp_NRa_two_parents_mixExp_withMeanMaxPRa
+
+p.pars.CIa = c("y_min_CIa",
+               "y_max_CIa",
+               "k_CIa",
+               "x_50_CIa",
+               "log_x_50_CIa",
+               "sigma_CIa")
+
+p.pars.MTa = c("beta_MTa",
+               "beta_0_MTa",
+               "sigma_MTa")
+
+p.pars.PRa = c("mean_y_max_PRa",
+               "sd_y_max_PRa",
+               "y_max_rep_PRa",
+               "k_PRa",
+               "x_MTa_tox_min_PRa",
+               "sigma_PRa")
+
+p.pars.NRa = c("y_max_p_NRa",
+               "x_MTa_tox_min_NRa",
+               "x_PRa_tox_min_NRa",
+               "k_MTa_NRa",     
+               "k_PRa_NRa",     
+               "sigma_NRa")
+
+tmp.parsName = c(p.pars.CIa,
+                 p.pars.MTa,
+                 p.pars.PRa,
+                 p.pars.NRa,
+                 
+                 "lp__")
+
+
+la_all = as.data.frame(rstan::extract(tmp.fit, pars = tmp.parsName))
+
+la.map_all = la_all[which.max(la_all$lp__),]
+
+
+la.summary_all = summary(tmp.fit,
+                         probs = c(0.05, 0.95),
+                         pars = tmp.parsName)$summary %>% as.data.frame()
+
+la.summary_all$MAP = la.map_all %>% as.matrix() %>% c()
+la.mean_all = la.summary_all["mean"] %>% t() %>% as.data.frame()
+
+la.summary_all = la.summary_all %>% select(MAP, mean,se_mean, sd, `5%`, `95%`,n_eff,Rhat)
+
+# options("scipen"= 2,digits=5)
+# options("scipen"= 0,digits=7)
+la.summary_all %>% round(.,digits = 3) %>%  DT::datatable(.,options = list(pageLength = dim(.)[1]))
+```
+### Diagnostic 
+
+<!-- {.tabset .tabset-fade .tabset-pills} -->
+
+```{r}
+posterior2 <- rstan::extract(tmp.fit,
+                             # inc_warmup = TRUE,
+                             permuted = FALSE)
+library(bayesplot)
+color_scheme_set("mix-blue-pink")
+```
+
+#### ShinyStan
+
+```{r eval=F, echo=T}
+shinystan::launch_shinystan(tmp.fit)
+```
+
+
+#### CIa 
+
+##### Check MCMC samples only 
+
+<!-- {.tabset .tabset-fade .tabset-pills} -->
+
+###### Traceplots
+
+```{r}
+stan_trace(tmp.fit,
+           pars = p.pars.CIa,ncol = 2)
+```
+
+###### Posterior distribution
+
+```{r}
+stan_hist(tmp.fit,
+          pars = p.pars.CIa,ncol = 2)
+```
+
+
+###### Autocorrelation
+
+```{r}
+stan_ac(tmp.fit,
+        pars = p.pars.CIa,ncol = 2)
+```
+
+##### Check fit with data
+
+Load data
+
+```{r include=F}
+source(glob_params$f.RScript("CPDs.R"))
+source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R'))
+
+tmp.chemi = "Deguelin"
+
+tmp.data.KE1 = KE1.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE2 = KE2.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE3 = KE3.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+tmp.data.KE4 = KE4.both %>% filter(., chemi == tmp.chemi, concentration_MuMol > 0)
+```
+
+###### Fit with Predidctions
+
+```{r}
+tmp.est.ponct = la.map_all
+p.data = tmp.data.KE1
+
+set.seed(1)
+post_sample.size = 100
+# Random seed
+post_sample.CIa = tmp.fit %>% 
+  rstan::extract(., 
+                 pars = c(p.pars.CIa,"lp__"),
+                 permuted = T) %>% 
+  data.frame() %>% 
+  sample_n(size = post_sample.size) %>% 
+  mutate(replication = "post_sample") %>% 
+  bind_rows(select(tmp.est.ponct, p.pars.CIa,"lp__") %>% 
+              mutate(replication = "map"))
+
+p.data_pred =
+  post_sample.CIa %>%
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>%
+  tidyr::crossing(concentration_MuMol = exp(seq(-10, 3, 0.1))) %>%    # repeat each row for every occurence of x
+  mutate(c1_activity = f.link.lgstc(
+    x = log(concentration_MuMol),
+    params = list(
+      y_min     = y_min_CIa,
+      y_max     = y_max_CIa,
+      x_50      = x_50_CIa %>% log(),
+      k         = k_CIa
+    )
+  ))   
+
+p.data = p.data %>% mutate(curve = 0) %>% 
+  select(concentration_MuMol, c1_activity, replication, curve) %>%
+  bind_rows(p.data_pred %>%
+              select(concentration_MuMol, c1_activity, replication, curve))
+
+
+# Plot
+ggplot(data = p.data, 
+       aes(x = concentration_MuMol, 
+           y = c1_activity, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
+  theme(legend.position = "none") +
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), alpha = 1, colour = "red") +
+  geom_point(data = . %>% filter(curve == 0) ) +
+  scale_y_continuous(limit=c(0,120),oob=censor) +
+  scale_x_continuous(trans = "log10")
+
+ls(pattern = glob2rx("p.data*", trim.head = T)) %>% rm()
+```
+
+
+#### MTa
+
+##### Check MCMC samples only 
+
+<!-- {.tabset .tabset-fade .tabset-pills} -->
+###### Traceplots
+
+```{r}
+stan_trace(tmp.fit,
+           pars = p.pars.MTa,ncol = 2)
+```
+
+###### Posterior distribution
+
+```{r}
+stan_hist(tmp.fit,
+          pars = p.pars.MTa,ncol = 2)
+```
+
+
+###### Autocorrelation
+
+```{r}
+stan_ac(tmp.fit,
+        pars = p.pars.MTa,ncol = 2)
+```
+
+##### Check fit with data
+
+###### Fit wrt raw data : x -> MTa
+
+```{r}
+p.data = tmp.data.KE2
+
+p.data.dose.range = p.data$concentration_MuMol %>% log() %>% range()
+p.data.dose.range = range(
+  ceiling(p.data.dose.range),
+  floor(p.data.dose.range)
+)
+
+
+set.seed(1)
+post_sample.size = 100
+
+# Random seed
+post_sample.MTa = tmp.fit %>% 
+  rstan::extract(., 
+                 pars = c(p.pars.CIa,
+                          p.pars.MTa,
+                          "lp__"),
+                 permuted = T) %>% 
+  data.frame() %>% 
+  sample_n(size = post_sample.size) %>% 
+  mutate(replication = "post_sample") %>% 
+  bind_rows(select(tmp.est.ponct, 
+                   p.pars.CIa,
+                   p.pars.MTa,
+                   "lp__") %>% 
+              mutate(replication = "map"))
+
+p.data_pred =
+  post_sample.MTa %>%
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% # add index for each post_sample
+  tidyr::crossing(concentration_MuMol = exp(seq(p.data.dose.range[1], p.data.dose.range[2], 0.05))) %>%  # repeat each row for every occurence of x
+  mutate(c1_activity = # Predict CIa with correponding post_sample
+           f.link.lgstc(
+             x = log(concentration_MuMol),
+             params = list(
+               y_min     = y_min_CIa,
+               y_max     = y_max_CIa,
+               x_50      = x_50_CIa %>% log(),
+               k         = k_CIa
+             )
+           )) %>%
+  mutate(mito_resp = # Predict MTa with correponding post_sample
+           f.link.linear(x = c1_activity,
+                         params = list(beta   = beta_MTa,
+                                       beta_0 = beta_0_MTa)
+                         ) %>%
+           f.link.truncation(., lower = 0, upper = 120)
+  )
+
+p.data = p.data %>% 
+  mutate(curve = 0) %>% # curve == 0 corresponds to raw data
+  select(concentration_MuMol, mito_resp, replication, curve) %>% 
+  bind_rows(p.data_pred %>%
+              select(concentration_MuMol, mito_resp, replication, curve))
+
+
+# Plot
+ggplot(data = p.data, 
+       aes(x = concentration_MuMol, 
+           y = mito_resp, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
+  theme(legend.position = "none") +
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), alpha = 1, colour = "red") +
+  geom_point(data = . %>% filter(curve == 0) ) +
+  scale_y_continuous(limit=c(0,120),oob=squish) +
+  scale_x_continuous(trans = "log10")
+
+```
+
+
+
+#### PRa
+
+##### Check MCMC samples only 
+
+<!-- {.tabset .tabset-fade .tabset-pills} -->
+
+###### Traceplots
+
+```{r}
+stan_trace(tmp.fit,
+           pars = p.pars.PRa)
+```
+
+###### Posterior distribution
+
+```{r}
+stan_hist(tmp.fit,
+          pars = p.pars.PRa)
+```
+
+
+###### Autocorrelation
+
+```{r}
+stan_ac(tmp.fit,
+        pars = p.pars.PRa)
+```
+
+##### Check fit with data
+
+###### Fit wrt raw data : x -> PRa
+
+####### data with Fit for existing "individuals" (that is replication groups)
+
+```{r}
+p.data = tmp.data.KE3
+
+p.data.dose.range = p.data$concentration_MuMol %>% log() %>% range()
+p.data.dose.range = range(
+  ceiling(p.data.dose.range),
+  floor(p.data.dose.range)
+)
+
+set.seed(1)
+post_sample.size = 100
+
+names(tmp.fit)
+# Random seed
+post_sample.PRa = 
+  tmp.fit %>% 
+  rstan::extract(., 
+                 pars = c(p.pars.CIa,
+                          p.pars.MTa,
+                          p.pars.PRa,
+                          "lp__"),
+                 permuted = T) %>% 
+  data.frame() %>% 
+  sample_n(size = post_sample.size) %>% 
+  mutate(replication = "post_sample") %>% 
+  bind_rows(tmp.est.ponct %>% 
+              mutate(replication = "map"))
+
+# post_sample.PRa %>% names
+p.data_pred =
+  post_sample.PRa %>%
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% # add index for each post_sample
+  gather(y_max_rep_PRa.1, y_max_rep_PRa.2, y_max_rep_PRa.3, y_max_rep_PRa.4, 
+         key = "replication", 
+         value = y_max_PRa) %>% 
+  mutate(replication = replication %>% str_sub(., -1)) %>% 
+  tidyr::crossing(concentration_MuMol = exp(seq(p.data.dose.range[1], p.data.dose.range[2], 0.1))) %>%  # repeat each row for every occurence of x
+  mutate(c1_activity = # Predict CIa with correponding post_sample
+           f.link.lgstc(
+             x = log(concentration_MuMol),
+             params = list(
+               y_min     = y_min_CIa,
+               y_max     = y_max_CIa,
+               x_50      = log_x_50_CIa,
+               k         = k_CIa))
+         ) %>%
+  mutate(mito_resp = # Predict MTa with correponding post_sample
+           f.link.linear(x = c1_activity,
+                         params = list(beta   = beta_MTa,
+                                       beta_0 = beta_0_MTa)
+           ) %>%
+           f.link.truncation(., lower = 0, upper = 120)
+         ) %>%
+  mutate(Prot_acti = # Predict PRa with correponding post_sample
+           f.link.exp_tox_min(
+             x = mito_resp,
+             params = list(
+               y_max = y_max_PRa,
+               x_tox_min = x_MTa_tox_min_PRa,
+               k = k_PRa
+             )
+           )) 
+
+
+p.data = p.data %>% 
+  mutate(curve = 0) %>% # curve == 0 corresponds to raw data
+  select(concentration_MuMol, Prot_acti, replication, curve) %>% 
+  mutate(replication = replication %>% str_sub(., -1)) %>% 
+  bind_rows(p.data_pred %>%
+              select(concentration_MuMol, Prot_acti, replication, curve))
+
+
+# Plot
+ggplot(data = p.data, 
+       aes(x = concentration_MuMol, 
+           y = Prot_acti, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = interaction(curve,replication)), alpha = 0.05) + 
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), aes(group = interaction(curve,replication)), alpha = 1) +
+  geom_point(data = . %>% filter(curve == 0) ) +
+  scale_y_continuous(limit=c(0,150),oob=squish) +
+  scale_x_continuous(trans = "log10") +
+  theme(legend.position = "none")
+```
+
+####### Data with population level predictions
+
+```{r}
+p.data_pred =
+  post_sample.PRa %>%
+  select(- y_max_rep_PRa.1, - y_max_rep_PRa.2, - y_max_rep_PRa.3, - y_max_rep_PRa.4) %>% 
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% # add index for each post_sample
+  mutate(y_max_PRa = pmap(list(n = 1, mean = mean_y_max_PRa, sd = sd_y_max_PRa), rnorm) %>% unlist()) %>% 
+  tidyr::crossing(concentration_MuMol = exp(seq(p.data.dose.range[1], p.data.dose.range[2], 0.1))) %>%  # repeat each row for every occurence of x
+  mutate(c1_activity = # Predict CIa with correponding post_sample
+           f.link.lgstc(
+             x = log(concentration_MuMol),
+             params = list(
+               y_min     = y_min_CIa,
+               y_max     = y_max_CIa,
+               x_50      = log_x_50_CIa,
+               k         = k_CIa))
+         ) %>%
+  mutate(mito_resp = # Predict MTa with correponding post_sample
+           f.link.linear(x = c1_activity,
+                         params = list(beta   = beta_MTa,
+                                       beta_0 = beta_0_MTa)
+           ) %>%
+           f.link.truncation(., lower = 0, upper = 120)
+         ) %>%
+  mutate(Prot_acti = # Predict PRa with correponding post_sample
+           f.link.exp_tox_min(
+             x = mito_resp,
+             params = list(
+               y_max = y_max_PRa,
+               x_tox_min = x_MTa_tox_min_PRa,
+               k = k_PRa
+             )
+           )) %>% 
+  mutate(replication = "0")
+
+p.data = tmp.data.KE3 %>% 
+  mutate(curve = 0) %>% # curve == 0 corresponds to raw data
+  select(concentration_MuMol, Prot_acti, replication, curve) %>% 
+  mutate(replication = replication %>% str_sub(., -1)) %>% 
+  bind_rows(p.data_pred %>%
+              select(concentration_MuMol, Prot_acti, replication, curve))
+
+ggplot(data = p.data, 
+       aes(x = concentration_MuMol, 
+           y = Prot_acti, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
+  theme(legend.position = "none") +
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), aes(group = curve), alpha = 1) +
+  geom_point(data = . %>% filter(curve == 0) ) +
+  scale_y_continuous(limit=c(0,150),oob=squish) +
+  scale_x_continuous(trans = "log10")
+
+```
+
+###### Prediction MTa -> PRa
+
+```{r}
+p.data_pred =
+  post_sample.PRa %>%
+  select(- y_max_rep_PRa.1, - y_max_rep_PRa.2, - y_max_rep_PRa.3, - y_max_rep_PRa.4) %>% 
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% # add index for each post_sample
+  mutate(y_max_PRa = pmap(list(n = 1, mean = mean_y_max_PRa, sd = sd_y_max_PRa), rnorm) %>% unlist()) %>% 
+  tidyr::crossing(mito_resp = seq(0, 100, 0.05)) %>%  # repeat each row for every occurence of x
+  mutate(Prot_acti = # Predict PRa with correponding post_sample
+           f.link.exp_tox_min(
+             x = mito_resp,
+             params = list(
+               y_max = y_max_PRa,
+               x_tox_min = x_MTa_tox_min_PRa,
+               k = k_PRa
+             )
+           ))
+
+
+ggplot(data = p.data_pred, 
+       aes(x = mito_resp, 
+           y = Prot_acti, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
+  theme(legend.position = "none") +
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), alpha = 1, colour = "red") +
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  labs(y = "PRa_pred")
+```
+
+
+#### NRa
+
+##### Check MCMC samples only 
+
+<!-- {.tabset .tabset-fade .tabset-pills} -->
+
+###### Traceplots
+
+```{r}
+stan_trace(tmp.fit,
+           pars = p.pars.NRa)
+```
+
+###### Posterior distribution
+
+```{r}
+stan_hist(tmp.fit,
+          pars = p.pars.NRa)
+```
+
+
+###### Autocorrelation
+
+```{r}
+stan_ac(tmp.fit,
+        pars = p.pars.NRa)
+```
+
+##### Check fit with data
+
+###### Fit wrt raw data : x -> NRa
+
+```{r}
+p.data = tmp.data.KE4
+
+p.data.dose.range = p.data$concentration_MuMol %>% log() %>% range()
+p.data.dose.range = range(
+  ceiling(p.data.dose.range),
+  floor(p.data.dose.range)
+)
+
+set.seed(1)
+post_sample.size = 100
+
+# Random seed
+post_sample.NRa = tmp.fit %>% 
+  rstan::extract(., 
+                 pars = c(p.pars.CIa,
+                          p.pars.MTa,
+                          p.pars.PRa,
+                          p.pars.NRa,
+                          "lp__"),
+                 permuted = T) %>% 
+  data.frame() %>% 
+  sample_n(size = post_sample.size) %>% 
+  mutate(replication = "post_sample") %>% 
+  bind_rows(tmp.est.ponct %>% 
+              mutate(replication = "map"))
+
+
+# post_sample.NRa %>% names
+p.data_pred =
+  post_sample.NRa %>%
+  select(- y_max_rep_PRa.1, - y_max_rep_PRa.2, - y_max_rep_PRa.3, - y_max_rep_PRa.4) %>% 
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% # add index for each post_sample
+  mutate(y_max_PRa = pmap(list(n = 1, mean = mean_y_max_PRa, sd = sd_y_max_PRa), rnorm) %>% unlist()) %>% 
+  tidyr::crossing(concentration_MuMol = exp(seq(p.data.dose.range[1], p.data.dose.range[2], 0.05))) %>%  # repeat each row for every occurence of x
+  mutate(c1_activity = # Predict CIa with correponding post_sample
+           f.link.lgstc(
+             x = log(concentration_MuMol),
+             params = list(
+               y_min     = y_min_CIa,
+               y_max     = y_max_CIa,
+               x_50      = log_x_50_CIa,
+               k         = k_CIa))
+         ) %>%
+  mutate(mito_resp = # Predict MTa with correponding post_sample
+           f.link.linear(x = c1_activity,
+                         params = list(beta   = beta_MTa,
+                                       beta_0 = beta_0_MTa)
+           ) %>%
+           f.link.truncation(., lower = 0, upper = 120)
+         ) %>%
+  mutate(Prot_acti = # Predict PRa with correponding post_sample
+           f.link.exp_tox_min(
+             x = mito_resp,
+             params = list(
+               y_max = y_max_PRa,
+               x_tox_min = x_MTa_tox_min_PRa,
+               k = k_PRa
+             )
+           )) %>% 
+  mutate(Neurite_Area = # Predict PRa with correponding post_sample
+           f.link.exp_tox_min(x = Prot_acti, 
+                              params = list(y_max = y_max_p_NRa,
+                                            x_tox_min = x_PRa_tox_min_NRa,
+                                            k = k_PRa_NRa)) + 
+           f.link.exp_tox_min(x = mito_resp,
+                              params = list(y_max = 100 - y_max_p_NRa,
+                                            x_tox_min = x_MTa_tox_min_NRa,
+                                            k = k_MTa_NRa))
+         ) %>% 
+  mutate(replication = "0")
+
+p.data = p.data %>% 
+  mutate(curve = 0) %>% # curve == 0 corresponds to raw data
+  select(concentration_MuMol, Neurite_Area, replication, curve) %>% 
+  mutate(replication = replication %>% str_sub(., -1)) %>% 
+  bind_rows(p.data_pred %>%
+              select(concentration_MuMol, Neurite_Area, replication, curve))
+
+ggplot(data = p.data, 
+       aes(x = concentration_MuMol, 
+           y = Neurite_Area, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
+  theme(legend.position = "none") +
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), aes(group = curve), alpha = 1) +
+  geom_point(data = . %>% filter(curve == 0) ) +
+  scale_y_continuous(limit=c(0,150),oob=squish) +
+  scale_x_continuous(trans = "log10")
+```
+
+
+###### Prediction (MTa -> PRa) -> NRa
+
+```{r}
+p.data_pred =
+  post_sample.NRa %>%
+  select(- y_max_rep_PRa.1, - y_max_rep_PRa.2, - y_max_rep_PRa.3, - y_max_rep_PRa.4) %>% 
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% # add index for each post_sample
+  mutate(y_max_PRa = pmap(list(n = 1, mean = mean_y_max_PRa, sd = sd_y_max_PRa), rnorm) %>% unlist()) %>% 
+  tidyr::crossing(mito_resp = seq(0, 100, 0.05)) %>%  # repeat each row for every occurence of x
+  mutate(Prot_acti = # Predict PRa with correponding post_sample
+           f.link.exp_tox_min(
+             x = mito_resp,
+             params = list(
+               y_max = y_max_PRa,
+               x_tox_min = x_MTa_tox_min_PRa,
+               k = k_PRa
+             )
+           )) %>% 
+  mutate(Neurite_Area = # Predict PRa with correponding post_sample
+           f.link.exp_tox_min(x = Prot_acti, 
+                              params = list(y_max = y_max_p_NRa,
+                                            x_tox_min = x_PRa_tox_min_NRa,
+                                            k = k_PRa_NRa)) + 
+           f.link.exp_tox_min(x = mito_resp,
+                              params = list(y_max = 100 - y_max_p_NRa,
+                                            x_tox_min = x_MTa_tox_min_NRa,
+                                            k = k_MTa_NRa))
+         )
+```
+
+
+####### plot MTa -> NRa
+
+```{r}
+ggplot(data = p.data_pred, 
+       aes(x = mito_resp, 
+           y = Neurite_Area, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
+  theme(legend.position = "none") +
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), alpha = 1, colour = "red") +
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  labs(y = "NRa_pred")
+```
+
+####### Plot PRa -> NRa
+
+```{r}
+ggplot(data = p.data_pred, 
+       aes(x = Prot_acti, 
+           y = Neurite_Area, colour = replication)) + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
+  theme(legend.position = "none") +
+  geom_line (data = . %>% filter(curve == post_sample.size + 1), alpha = 1, colour = "red") +
+  scale_y_continuous(limit=c(0,NA),oob=squish) +
+  scale_x_continuous(limit=c(0,150),oob=squish) +
+  labs(y = "NRa_pred")
+```
+
+####### Plots (MTa -> PRa) -> NRa
+
+```{r}
+tmp.est.ponct = la.map_all
+# tmp.est.ponct = la.mean_all
+
+names(la.map_all)
+
+# Parameters of stanFit for CIa
+tmp.pars_CIa = list(y_min     = tmp.est.ponct$y_min_CIa,
+                    y_max     = tmp.est.ponct$y_max_CIa,
+                    x_50      = tmp.est.ponct$log_x_50_CIa,
+                    k         = tmp.est.ponct$k_CIa)
+tmp.pars_MTa = list(beta     = tmp.est.ponct$beta_MTa,
+                    beta_0   = tmp.est.ponct$beta_0_MTa)
+tmp.pars_PRa = list(y_max     = tmp.est.ponct$mean_y_max_PRa,
+                    x_tox_min = tmp.est.ponct$x_MTa_tox_min_PRa,
+                    k         = tmp.est.ponct$k_PRa )
+# Predictions
+
+p.data = tmp.data.KE4
+
+p.data$CIa_pred = log(p.data$concentration_MuMol) %>%
+    f.link.lgstc(.,
+                 params = tmp.pars_CIa)
+
+p.data$MTa_pred =
+  f.link.linear(x = p.data$CIa_pred,
+                params = tmp.pars_MTa) %>%
+  f.link.truncation(., lower = 0, upper = 120)
+
+p.data$PRa_pred = f.link.exp_tox_min(p.data$MTa_pred,
+                                     params = tmp.pars_PRa)
+p.data %>% names
+```
+
+```{r}
+nrep  = p.data$replication %>% unique %>% length()
+repID = p.data$replication %>% as.factor() %>% as.numeric()
+xraw  = p.data$MTa_pred
+yraw  = p.data$PRa_pred
+zraw  = p.data$Neurite_Area
+
+xdata = p.data_pred$mito_resp
+ydata = p.data_pred$Prot_acti
+zdata = p.data_pred$Neurite_Area
+xlims = c(0, max(xdata,xraw))
+ylims = c(0, max(ydata,yraw,100))
+zlims = c(0, max(zdata,zraw,100))
+
+open3d()
+par3d(windowRect=c(20, 60, 770, 810))
+myzoom = 1.2
+myexpand = 1.05
+my.userMatrix = matrix(
+    c(0.86628413, -0.4994070, 0.01201642,    0,
+      0.04811093,  0.1073487, 0.99305671,    0,
+     -0.49722946, -0.8596911, 0.11702148,    0,
+      0.00000000,  0.0000000, 0.00000000,    1), byrow=T, 4, 4)
+
+par3d(family="sans", cex=1, FOV=30, ignoreExtent=F)
+
+plot3d(x=NA,
+       y=NA,
+       z=NA,
+       type="n", # you can set to "n" for a blank plot
+       size=1,
+       xlab="", ylab="", zlab="",
+       aspect=c(1,1,1), axes=F, box=T, expand=myexpand,
+       xlim=xlims, ylim=ylims, zlim=zlims)
+
+box3d()
+axes3d(edges=c('x--', 'y--', 'z-+'))
+
+text3d(x=  xlims[2]/2, y= -ylims[2]/9  , z= -zlims[2]/9  , "MTa"  , cex=1.4, col="black")
+text3d(x= -xlims[2]/6, y=  ylims[2]/2  , z= -zlims[2]/6  , "PRa"  , cex=1.4, col="black")
+text3d(x= -xlims[2]/5, y=  ylims[2]*6/5, z=  zlims[2]/2  , "NRa"  , cex=1.4, col="black")
+  
+rgl.spheres(x=xraw,
+         y=yraw,
+         z=zraw,
+         size=5,
+         col= rainbow(nrep)[repID])
+
+for(i in 1:post_sample.size){
+  loc.p.data = p.data_pred %>% filter(curve == i)
+  lines3d(x = loc.p.data$mito_resp,
+          y = loc.p.data$Prot_acti,
+          z = loc.p.data$Neurite_Area,
+          color="grey", add = T)
+}
+
+loc.p.data = p.data_pred %>% filter(curve == post_sample.size + 1)
+lines3d(x = loc.p.data$mito_resp,
+        y = loc.p.data$Prot_acti,
+        z = loc.p.data$Neurite_Area,
+        color="red", add = T, lwd = 5)
+
+rglwidget()
+while (rgl.cur() > 0) { rgl.close()}
+```
+
+
+

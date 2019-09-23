@@ -368,7 +368,8 @@ tmp.stanFit.ts
 f.stanFit.filter(pattern = tmp.stanFit.ts[1],
                                     chemi = tmp.chemi,
                                     extension = "stanFit")
-tmp.stanFit.name = "step_by_step_uptoKE4_NRa_TwoKERs_PRa_Hierarchical_Exp_NRa_two_parents_mixExp-ts_1909061617-chemi_Rotenone-chain_3-iter_10000-seed_1909061617-nEffMin_438-rHatMax100_100.stanFit"
+# tmp.stanFit.name = "step_by_step_uptoKE4_NRa_TwoKERs_PRa_Hierarchical_Exp_NRa_two_parents_mixExp-ts_1909061617-chemi_Rotenone-chain_3-iter_10000-seed_1909061617-nEffMin_438-rHatMax100_100.stanFit"
+tmp.stanFit.name = "step_by_step_uptoKE4_NRa_TwoKERs_PRa_Hierarchical_Exp_NRa_two_parents_mixExp-ts_1909201525-chemi_Rotenone-chain_3-iter_10000-seed_1909201525-nEffMin_127-rHatMax100_101.stanFit"
 
 step_by_step_uptoKE4_NRa_TwoKERs_PRa_Hierarchical_Exp_NRa_two_parents_mixExp =
   # readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name[1]))
@@ -598,10 +599,26 @@ ggplot(data = p.data,
 ```{r}
 p.data_pred =
   post_sample.PRa_NRa %>%
-  select(- y_max_PRa.1, - y_max_PRa.2, - y_max_PRa.3, - y_max_PRa.4) %>% 
+  mutate(y_max_PRa_NRa = y_max_frac_NRa,
+         y_max_MTa_NRa = 100 - y_max_frac_NRa) %>%
+  select(-y_max_PRa.1,-y_max_PRa.2,-y_max_PRa.3,-y_max_PRa.4) %>%
   dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% # add index for each post_sample
-  mutate(y_max_PRa = pmap(list(n = 1, mean = mean_y_max_PRa, sd = sd_y_max_PRa), rnorm) %>% unlist()) %>% 
-  tidyr::crossing(mito_resp = seq(0, 100, 0.05)) %>%  # repeat each row for every occurence of x
+  mutate(y_max_PRa = pmap(list(
+    n = 1, mean = mean_y_max_PRa, sd = sd_y_max_PRa
+  ), rnorm) %>% unlist()) %>% 
+  group_by(curve) %>%
+  nest() %>%
+  mutate(mito_resp = map(data, function(x) # interpolation points
+    c(0,
+      x$x_min_PRa + c(
+        0,
+        seq(log(0.01),
+            log(100 - x$x_min_PRa),
+            by = 0.05) %>%
+          exp(),
+        100
+      )))) %>%
+  unnest() %>% 
   mutate(Prot_acti = # Predict PRa with correponding post_sample
            f.link.exp_tox_min(
              x = mito_resp,
@@ -736,8 +753,29 @@ p.data_pred =
   dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% # add index for each post_sample
   mutate(y_max_PRa = pmap(list(
     n = 1, mean = mean_y_max_PRa, sd = sd_y_max_PRa
-  ), rnorm) %>% unlist()) %>%
-  tidyr::crossing(mito_resp = seq(0, 100, 0.05)) %>%  # repeat each row for every occurence of x
+  ), rnorm) %>% unlist()) %>% 
+  group_by(curve) %>%
+  nest() %>%
+  mutate(mito_resp = map(data, function(x){
+    a = c(0,
+        x$x_min_PRa + c(
+        0,
+        10 ^ seq(log10(1E-5),
+            log10(100 - x$x_min_PRa),
+            by = 0.05)),
+      100)
+    b = c(0,
+        x$x_min_MTa_NRa + c(
+        0,
+        10 ^ seq(log10(1E-5),
+            log10(100 - x$x_min_MTa_NRa),
+            by = 0.05)),
+      100)
+    union(a,b) %>%
+      sort(decreasing = F) %>%
+      return()
+  })) %>%
+  unnest() %>% 
   mutate(Prot_acti = # Predict PRa with correponding post_sample
            f.link.exp_tox_min(
              x = mito_resp,
@@ -774,11 +812,13 @@ p.data_pred =
 
 ```{r}
 p.data_pred %>% 
-  filter(mito_resp == 100   , Neurite_Area < 99) %>%
-  group_by(curve) %>% 
-  top_n(1, curve) %>% 
+  filter(mito_resp <= x_min_PRa + 1E-5 )  %>%
+  # group_by(curve) %>% 
+  # top_n(1, curve) %>% 
   select(Neurite_Area,
-         Neurite_Area_PRa, y_max_PRa_NRa, 
+         mito_resp, x_min_MTa_NRa,
+         x_min_PRa, Prot_acti, x_min_PRa_NRa,
+         Neurite_Area_PRa, y_max_PRa_NRa,
          Neurite_Area_MTa, y_max_MTa_NRa)
 
 ```
@@ -790,8 +830,10 @@ p.data_pred %>%
 ggplot(data = p.data_pred, 
        aes(x = mito_resp, 
            y = Neurite_Area, colour = replication)) + 
+  # geom_point (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") +
   geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
   theme(legend.position = "none") +
+  # geom_point (data = . %>% filter(curve == post_sample.size + 1), alpha = 1, colour = "red") +
   geom_line (data = . %>% filter(curve == post_sample.size + 1), alpha = 1, colour = "red") +
   scale_y_continuous(limit=c(0,NA),oob=squish) +
   labs(y = "NRa_pred")
@@ -803,9 +845,11 @@ ggplot(data = p.data_pred,
 ggplot(data = p.data_pred, 
        aes(x = Prot_acti, 
            y = Neurite_Area, colour = replication)) + 
-  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") + 
+  geom_line (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey") +
+  # geom_point (data = . %>% filter(curve > 0), aes(group = curve), alpha = 0.5, colour = "grey", size = 0.01) + 
   theme(legend.position = "none") +
   geom_line (data = . %>% filter(curve == post_sample.size + 1), alpha = 1, colour = "red") +
+  # geom_point (data = . %>% filter(curve == post_sample.size + 1), alpha = 1, colour = "red") +
   scale_y_continuous(limit=c(0,NA),oob=squish) +
   scale_x_continuous(limit=c(0,150),oob=squish) +
   labs(y = "NRa_pred")
@@ -818,7 +862,10 @@ ggplot(data = p.data_pred,
 # tmp.est.ponct = la.map_all
 # tmp.est.ponct = la.mean_all
 
-tmp.est.ponct = p.data_pred %>% filter(replication == "map") %>% top_n(1)
+tmp.est.ponct = p.data_pred %>% 
+  filter(replication == "map") %>% as.data.frame()
+tmp.est.ponct <- tmp.est.ponct[1,]
+
 
 # Parameters of stanFit for CIa
 tmp.pars_CIa = list(y_min     = tmp.est.ponct$y_min_CIa,
@@ -867,6 +914,12 @@ open3d()
 par3d(windowRect=c(20, 60, 770, 810))
 myzoom = 1.2
 myexpand = 1.05
+  ## another solution is to orient it by hand and then do
+  ## good.par = par3d()
+  ## good.par$userMatrix
+  ## view3d(fov=30, zoom=myzoom, interactive=F,
+  ##        userMatrix=good.par$userMatrix)
+  ## you can set by hand: this is a good view
 my.userMatrix = matrix(
     c(0.86628413, -0.4994070, 0.01201642,    0,
       0.04811093,  0.1073487, 0.99305671,    0,
@@ -885,7 +938,7 @@ plot3d(x=NA,
        xlim=xlims, ylim=ylims, zlim=zlims)
 
 box3d()
-  axes3d(edges=c('x--', 'y--', 'z-+'))
+axes3d(edges=c('x--', 'y--', 'z-+'))
 
 text3d(x=  xlims[2]/2, y= -ylims[2]/9  , z= -zlims[2]/9  , "MTa"  , cex=1.4, col="black")
 text3d(x= -xlims[2]/6, y=  ylims[2]/2  , z= -zlims[2]/6  , "PRa"  , cex=1.4, col="black")

@@ -350,7 +350,10 @@ tmp.stanFit.ts
 f.stanFit.filter(pattern = tmp.stanFit.ts[1],
                                     chemi = tmp.chemi,
                                     extension = "stanFit")
-tmp.stanFit.name = "step_by_step_uptoKE4_NRa_TwoKERs_PRa_Hierarchical_Exp_NRa_two_parents_mixExp-ts_1909061617-chemi_Deguelin-chain_3-iter_10000-seed_1909061617-nEffMin_2-rHatMax100_204.stanFit"
+# tmp.stanFit.name = "step_by_step_uptoKE4_NRa_TwoKERs_PRa_Hierarchical_Exp_NRa_two_parents_mixExp-ts_1909061617-chemi_Deguelin-chain_3-iter_10000-seed_1909061617-nEffMin_2-rHatMax100_204.stanFit"
+tmp.stanFit.name = "step_by_step_uptoKE4_NRa_TwoKERs_PRa_Hierarchical_Exp_NRa_two_parents_mixExp-ts_1909201236-chemi_Deguelin-chain_3-iter_10000-seed_1909201236-nEffMin_3-rHatMax100_185.stanFit"
+
+# tmp.stanFit.name = "step_by_step_uptoKE4_NRa_TwoKERs_PRa_Hierarchical_Exp_NRa_two_parents_mixExp-ts_1909201525-chemi_Deguelin-chain_3-iter_10000-seed_1909201525-nEffMin_2-rHatMax100_1656.stanFit"
 
 step_by_step_uptoKE4_NRa_TwoKERs_PRa_Hierarchical_Exp_NRa_two_parents_mixExp =
   # readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name[1]))
@@ -694,7 +697,20 @@ p.data = p.data %>%
   mutate(replication = replication %>% str_sub(., -1)) %>% 
   bind_rows(p.data_pred %>%
               select(concentration_MuMol, Neurite_Area, replication, curve))
+```
 
+```{r}
+
+p.data_pred %>% 
+  group_by(curve) %>% # group by post sample
+  distinct(.,interaction(curve,Prot_acti), .keep_all = T) %>% # keep only one 0 value for Prot_acti
+  distinct(.,interaction(curve,Neurite_Area), .keep_all = T) %>% # keep only one 0 value for Prot_acti
+  top_n(-2, Neurite_Area) %>% # Keep the lowest two value of Neurite
+  select(x_min_PRa_NRa, Prot_acti, Neurite_Area, curve)
+```
+
+
+```{r}
 ggplot(data = p.data, 
        aes(x = concentration_MuMol, 
            y = Neurite_Area, colour = replication)) + 
@@ -707,9 +723,11 @@ ggplot(data = p.data,
 ```
 
 
+
 #### Prediction (MTa -> PRa) -> NRa
 
 ```{r}
+
 p.data_pred =
   post_sample.PRa_NRa %>%
   mutate(y_max_PRa_NRa = y_max_frac_NRa,
@@ -718,8 +736,20 @@ p.data_pred =
   dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% # add index for each post_sample
   mutate(y_max_PRa = pmap(list(
     n = 1, mean = mean_y_max_PRa, sd = sd_y_max_PRa
-  ), rnorm) %>% unlist()) %>%
-  tidyr::crossing(mito_resp = seq(0, 100, 0.05)) %>%  # repeat each row for every occurence of x
+  ), rnorm) %>% unlist()) %>% 
+  group_by(curve) %>%
+  nest() %>%
+  mutate(mito_resp = map(data, function(x) # interpolation points
+    c(0,
+      x$x_min_PRa + c(
+        0,
+        seq(log(0.01),
+            log(100 - x$x_min_PRa),
+            by = 0.05) %>%
+          exp(),
+        100
+      )))) %>%
+  unnest() %>% 
   mutate(Prot_acti = # Predict PRa with correponding post_sample
            f.link.exp_tox_min(
              x = mito_resp,
@@ -755,6 +785,10 @@ p.data_pred =
 # <span style="color:red"> Problem </span>
 
 ```{r}
+
+p.data_pred %>% group_by(curve) %>% 
+  summarise(avg = mean(mean_y_max_PRa))
+
 p.data_pred %>% 
   filter(mito_resp == 100   , Neurite_Area < 99) %>%
   group_by(curve) %>% 
@@ -868,11 +902,11 @@ plot3d(x=NA,
        xlim=xlims, ylim=ylims, zlim=zlims)
 
 box3d()
-  axes3d(edges=c('x--', 'y--', 'z-+'))
-
+axes3d(edges=c('x--', 'x+-', 'y+-', 'z++',"z-+"))
+# ?axes3d
 text3d(x=  xlims[2]/2, y= -ylims[2]/9  , z= -zlims[2]/9  , "MTa"  , cex=1.4, col="black")
-text3d(x= -xlims[2]/6, y=  ylims[2]/2  , z= -zlims[2]/6  , "PRa"  , cex=1.4, col="black")
-text3d(x= -xlims[2]/5, y=  ylims[2]*6/5, z=  zlims[2]/2  , "NRa"  , cex=1.4, col="black")
+text3d(x= xlims[2]*6/5, y=  ylims[2]/2  , z= -zlims[2]/6  , "PRa"  , cex=1.4, col="black")
+text3d(x= xlims[2]*6/5, y=  ylims[2]*6/5, z=  zlims[2]/2  , "NRa"  , cex=1.4, col="black")
 
 
 for(i in 1:post_sample.size){

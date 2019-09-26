@@ -7,7 +7,7 @@ if(!exists("reloadpck")) source('GlobalParameters.R')
 if(exists("pckToLoad")){
   pckToLoad = unique(c(pckToLoad, 'tidyverse','rstan','magrittr','readxl'))
 }else{
-  pckToLoad = c('tidyverse','rstan','magrittr','readxl')
+  pckToLoad = c('tidyverse','readxl')
 }
 
 reloadpck()
@@ -24,8 +24,8 @@ reloadpck()
       read_xlsx(glob_params$DataPath %>% paste0(data.file.name),
                 skip = 1,
                 sheet = sn) %>%
-        filter(`concentration [µM]` != "DMSO control") %>% 
-        rename(., concentration_MuMol = `concentration [µM]`) %>% 
+        dplyr::rename(concentration_MuMol = `concentration [µM]`) %>% 
+        filter(concentration_MuMol != "DMSO control") %>% 
         select(c(starts_with("concentration"),starts_with("c1 inhibition"))) %>% 
         gather(.,
                starts_with("c1 inhibition"),
@@ -54,7 +54,8 @@ reloadpck()
       read_xlsx(glob_params$DataPath %>% paste0(data.file.name),
                 range = cell_rows(c(2,5)),
                 sheet = sn) %>%
-        filter(`concentration [µM]` != "DMSO control") %>% 
+        dplyr::rename(concentration_MuMol = `concentration [µM]`) %>% 
+        filter(concentration_MuMol != "DMSO control") %>% 
         select(c(starts_with("concentration"),starts_with("total"), starts_with("non-mito")) ) %>%
         gather(.,
                c(starts_with("total"), starts_with("non-mito")),
@@ -67,7 +68,6 @@ reloadpck()
         spread(., key = replication, value = resp) %>% 
         mutate(replication = paste0("mito. resp., N", repID),
                mito_resp = `total resp` - `non-mito. resp`) %>% 
-        rename(., concentration_MuMol = `concentration [µM]`) %>% 
         mutate(chemi = sn) %>% 
         select(chemi, concentration_MuMol, replication, mito_resp) %>% 
         return()
@@ -88,8 +88,8 @@ reloadpck()
       read_xlsx(glob_params$DataPath %>% paste0(data.file.name),
                 skip = 1,
                 sheet = sn) %>%
-        filter(`concentration [µM]` != "DMSO control") %>% 
-        rename(., concentration_MuMol = `concentration [µM]`) %>% 
+        dplyr::rename(concentration_MuMol = `concentration [µM]`) %>% 
+        filter(concentration_MuMol != "DMSO control") %>% 
         select(c(starts_with("concentration"), starts_with("Prot")) ) %>% 
         gather(.,
                starts_with("Prot"),
@@ -100,7 +100,6 @@ reloadpck()
         return()
     }) %>% bind_rows() %>% 
     mutate(concentration_MuMol = as.numeric(concentration_MuMol))
-  ?rename
   rm(data.file.name, sheet.names)
 }
 
@@ -119,8 +118,8 @@ reloadpck()
       read_xlsx(glob_params$DataPath %>% paste0(data.file.name),
                 skip = 1,
                 sheet = sn) %>%
-        filter(`concentration [µM]` != "DMSO control") %>% 
-        rename(., concentration_MuMol = `concentration [µM]`) %>% 
+        dplyr::rename( concentration_MuMol = `concentration [µM]`) %>% 
+        filter(concentration_MuMol != "DMSO control") %>% 
         select(c(starts_with("concentration"), starts_with("Neurite")) ) %>% 
         gather(.,
                starts_with("Neurite"),
@@ -137,27 +136,36 @@ reloadpck()
 
 
 # common KE ---------------------------------------------------------------
-KE1.other.chemi %>% DT::datatable()
-KE2.other.chemi %>% DT::datatable()
-KE3.other.chemi %>% DT::datatable()
-KE4.other.chemi %>% DT::datatable()
+# KE1.other.chemi %>% DT::datatable()
+# KE2.other.chemi %>% DT::datatable()
+# KE3.other.chemi %>% DT::datatable()
+# KE4.other.chemi %>% DT::datatable()
 
 
-commonKE = 
+chemi.common =
   reduce(list(KE1.other.chemi$chemi,
               KE2.other.chemi$chemi,
               KE3.other.chemi$chemi,
               KE4.other.chemi$chemi),
-       intersect)
+         intersect) %>%
+  tibble(chemi = .) %>%
+  rowid_to_column(var = "chemiID")
 
-list(KE1.other.chemi,
-     KE2.other.chemi,
-     KE3.other.chemi,
-     KE4.other.chemi) %>% 
-  map(., function(ds){
-    ds %>% 
-      filter(chemi %in% commonKE) %>% 
-      return()
-  })
+chemi.common.all = 
+  c("Rotenone",
+    "Deguelin",
+    chemi.common$chemi) %>%
+  tibble(chemi = .) %>%
+  rowid_to_column(var = "chemiID")
+
+# list(KE1.other.chemi,
+#      KE2.other.chemi,
+#      KE3.other.chemi,
+#      KE4.other.chemi) %>% 
+#   map(., function(ds){
+#     ds %>% 
+#       filter(chemi %in% chemi.common$chemi) %>% 
+#       return()
+#   })
 
 

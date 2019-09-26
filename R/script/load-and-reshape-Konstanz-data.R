@@ -1,4 +1,4 @@
-# Load-and-reshape-Konstantz-data.R
+# Load-and-reshape-Konstanz-data.R
 
 
 # KE1 ---------------------------------------------------------------------
@@ -49,12 +49,12 @@ reloadpck()
     KE1.Deguelin.rs = arrange(KE1.Deguelin.rs,concentration_MuMol)
   }
   
-  KE1.Deguelin.rs$chemi = "Deguelin"
   KE1.Rotenone.rs$chemi = "Rotenone"
+  KE1.Deguelin.rs$chemi = "Deguelin"
   
   KE1.both = 
-    bind_rows(KE1.Deguelin.rs,
-              KE1.Rotenone.rs)
+    bind_rows(KE1.Rotenone.rs,
+              KE1.Deguelin.rs)
   rm(data.file.name)
 }
 
@@ -103,12 +103,12 @@ reloadpck()
     KE2.Deguelin.rs = arrange(KE2.Deguelin.rs,concentration_MuMol)
   }
   
-  KE2.Deguelin.rs$chemi = "Deguelin"
   KE2.Rotenone.rs$chemi = "Rotenone"
+  KE2.Deguelin.rs$chemi = "Deguelin"
   
   KE2.both = 
-    bind_rows(KE2.Deguelin.rs,
-              KE2.Rotenone.rs)
+    bind_rows(KE2.Rotenone.rs,
+              KE2.Deguelin.rs)
   rm(data.file.name)
 }
 
@@ -155,12 +155,12 @@ reloadpck()
     KE3.Deguelin.rs = arrange(KE3.Deguelin.rs,concentration_MuMol)
   }
   
-  KE3.Deguelin.rs$chemi = "Deguelin"
   KE3.Rotenone.rs$chemi = "Rotenone"
+  KE3.Deguelin.rs$chemi = "Deguelin"
   
   KE3.both = 
-    bind_rows(KE3.Deguelin.rs,
-              KE3.Rotenone.rs)
+    bind_rows(KE3.Rotenone.rs,
+              KE3.Deguelin.rs)
   rm(data.file.name)
 }
 
@@ -209,12 +209,12 @@ reloadpck()
     KE4.Deguelin.rs = arrange(KE4.Deguelin.rs,concentration_MuMol)
   }
   
-  KE4.Deguelin.rs$chemi = "Deguelin"
   KE4.Rotenone.rs$chemi = "Rotenone"
+  KE4.Deguelin.rs$chemi = "Deguelin"
   
   KE4.both = 
-    bind_rows(KE4.Deguelin.rs,
-              KE4.Rotenone.rs)
+    bind_rows(KE4.Rotenone.rs,
+              KE4.Deguelin.rs)
   rm(data.file.name)
 }
 

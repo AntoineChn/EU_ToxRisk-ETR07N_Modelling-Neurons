@@ -1,0 +1,273 @@
+---
+title: "FBtalk_model_description"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    code_folding: hide
+    number_sections: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    fig_caption: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '..')
+knitr::opts_chunk$set(
+  cache = FALSE,
+  out.width = "100%",
+  fig.align = 'center',
+  fig.width = 8,
+  fig.asp = 0.618,  # 1 / phi
+  fig.show = "hold",
+  warning=FALSE, message=FALSE,
+  eval = TRUE, echo = TRUE
+)
+```
+
+```{r copy_img_folder, include=F}
+file.copy("./img", "./Rnotebook", recursive=TRUE, overwrite=T)
+```
+
+
+```{r glob_param, include=FALSE}
+source("GlobalParameters.R")
+source(glob_params$f.RFunc("stanFit_Name.R"))
+pckToLoad = c('tidyverse', 'DT',  "threejs",
+              "plyr","citr","readxl",'scales',"rstan","reshape2", "rgl",
+              "bayesplot","gridExtra")
+reloadpck()
+```
+
+# Introduction
+
+Modelling qAOP using DBN
+
+Model dis
+
+# AOP ETR07N
+
+```{r AOP_structure, echo=FALSE, out.width='100%'}
+knitr::include_graphics('./img/AOP_ETR07N.png')
+```
+
+- Chemical : `Dose` for chemical concentration
+- KE1 : `CIa` for complex I activity
+- KE2 : `MTa` for Mitochondrial activity
+- KE3 : `PRa` for proteostasis activity
+- KE4 : `NRa` for Neurite Area
+
+# Model description
+
+## X -> CIa : Log-logistic
+
+Log-logistic means CIa is a logistic function of $log(\text{dose})$.
+
+$$\begin{equation}
+\begin{split}
+y &= \frac{y_{max} - y_{min}}{1 + e^{-k\left(\ln(x) - \ln(x_{50}) \right)}} + y_{min}\\
+y_{obs} &\sim \mathcal{N}(y, \sigma_{y}^2)
+\end{split}
+\end{equation}$$
+
+**varaibles are :**
+
+- $y$ : KE of interest : CIa
+- $x$ : Parent node of $y$ in the AOP : Dose
+
+**Parameters are**
+
+- $y_{max}$
+- $y_{min}$
+- $ln(x_{50})$ : the center of symmetry of the logistic (transformed $tanh()$) function.
+- $\sigma_y$ :
+
+### Implementation detail
+
+**Parameters**
+
+<span style="color:red">Coming soon</span>
+
+```{r stan_def_theta_CIa}
+# cat("real<lower=         0>              y_min_CIa   ;
+# real<lower= y_min_CIa, upper= 300>  y_max_CIa   ;
+# real<lower=         0, upper=  10>  x_50_CIa    ;
+# real<lower=       -10, upper=   0>  k_CIa       ;
+# real<lower=         0, upper=  20>  sigma_CIa   ;")
+```
+
+**Priors**
+
+<span style="color:red">Coming soon</span>
+
+Parameters whose prior is not specified are set to proper / improper uniform.
+
+```{r stan_prior_theta_CIa}
+# cat("y_max_CIa ~ normal(100, 10)  ;
+# y_min_CIa ~ normal(  0, 10)  ;
+# sigma_CIa ~ normal(  0, 20)  ;")
+```
+
+----
+
+----
+
+## CIa -> MTa : truncated Linear
+
+### Modelling CIa -> MTa
+
+$$\begin{equation}
+\begin{split}
+y_{tmp} &= \beta x + \beta_{0} \\
+y &= \begin{cases}
+120 & \text{if $y_{tmp}>120$} \\
+0   & \text{if $y_{tmp}<0$}   \\
+y_{tmp} & \text{otherwise}
+\end{cases}\\
+y_{obs} &\sim \mathcal{N}(y, \sigma_{y}^2)
+\end{split}
+\end{equation}$$
+
+**Varaibles are :**
+
+- $y$ : KE of interest : MTa
+- $x$ : Parent node of $y$ in the AOP.
+
+**Parameters are :**
+
+- $\beta$
+- $\beta_{0}$
+- $\sigma_y$
+
+### Priors
+
+<span style="color:red">Coming soon</span>
+
+```{r stan_def_theta_MTa}
+# cat("real<lower=       0, upper=   10>   beta_MTa      ; // slope
+# real<lower=    -100, upper=  100>   beta_0_MTa    ; // intercept
+# real<lower=       0, upper=   30>   sigma_MTa     ; // observation noise standard error")
+```
+
+with uniform priors
+
+## MTa -> PRa : 
+
+### Modelling MTa -> PRa
+
+Variables are : 
+
+- $rep_i\in \{1,2,3,4\}$ : Indexe of replication group. We have 4 replications here
+- $y_{obs, rep_i}$ : experimental measurements of **PRa** (KE of interest)
+- $x_{rep_i}$ : Parent node of $y$ in the AOP.
+
+Parameters are marked in <span style="color:red">col</span><span style="color:green">ors</span> :
+
+- red : indicates parameters that are shared by all individual data
+- green : parameters that are specific to each sub-group : here sub-group corresponds to different replication groups.
+  
+$$\begin{equation}
+\begin{split}
+\color{green}{y_{max,rep_i}} &\sim \mathcal{N}(\color{red}{\mu_{y_{max}}},\, \color{red}{\sigma_{y_{max}}}^2)\\
+y_{rep_i} &= \begin{cases}
+\color{green}{y_{max,rep_i}}  \left( 1 - e^{-\color{red}{k}(x_{rep_i} - \color{red}{x_{min}} )} \right) & \text{if $x_{rep_i} > x_{min}$} \\
+0   & \text{otherwise}
+\end{cases}\\
+y_{obs,rep_i} &\sim \mathcal{N}(y_{rep_i},\, \color{red}{\sigma_{y}}^2)\\
+\end{split}
+\end{equation}$$
+
+### Remarks
+
+#### 1. Interpertation of parameters
+
+- for $i \in {1,2,3,4}$, $\color{green}{y_{max,rep_i}}$ are saturation levels for each of 4 replication groups 
+    - to be discussed with the data producer whysuch difference exists
+- $x_{min} \in \mathbb{R}^+$ : Minimum Effect quantity of MTa for PRa
+
+#### 2. Hyper parameters for y_max
+
+This is a hierarchical model :
+
+- Introduce two hyper paramters for $\color{green}{y_{max,rep_i}}$
+    - $\mu_{y_{max}}  \sim \mathcal{N} (100,\, {\sigma_{\text{user-difined}}}^2)$ : prior
+    - $\sigma_{y_{max}}  \sim \mathcal{L}$ : $\mathcal{L}$ a user-defined distribution : Half-normal as suggested by F.Y.B
+
+### Implementation detail 
+
+<span style="color:red">to complete</span>
+
+## PRa, MTa -> NRa
+
+### Preliminary study {.tabset .tabset-fade .tabset-pills}
+
+1. Use
+    - the dose of NRa data set
+    - the MAP point estimator of `step_by_step_uptoKE3_PRa*.stanFit`
+to predict
+    - `CIa_pred`
+    - `MTa_pred`
+    - `PRa_pred`
+1. Plot `NRa` wrt `PRa_pred`
+1. Plot `NRa` wrt `MTa_pred`
+1. 3D Plot `NRa` wrt `PRa_pred` and `MTa_pred`
+
+### Insights
+
+**Wang and Frederic's proposition :**
+
+- MTa and PRa are both in the AOP of interest.
+
+- PRa is child of MTa so that in principle PRa appears later than MTa. However, PRa moves much faster than MTa in the sens that starting from 0 (or some inestimable baseline, due to the limite of current dataset), PRa arrives earlier at its saturation level (normalised to 100%) than MTa.
+
+**Frederic and Wang suggest that both PRa and MTa are responsible for Neurite_Area increasing.**
+
+- PRa affects the KE:Neurite Area in early stage and holds its effect after PRa's saturation
+- MTa also affects the KE:Neurit Area, but in later stage.
+
+Regarding to the upper visualisations based on the following materials and previous results, <span style="color:red">these "two stages" are well seperated.</span>
+
+- Data on KE4 for Rotenon and Deguelin
+- Estimates for Rotenon up to KE3 :
+    - "step_by_step_uptoKE3_PRa_Hierarchical_Exp-ts_1909041546-chemi_Rotenone-chain_3-iter_10000-seed_1909041546-nEffMin_8-rHatMax100_116.stanFit"
+- estimates for Deguelin up to KE3 :
+    - "step_by_step_uptoKE3_PRa_Hierarchical_Exp-ts_1909041546-chemi_Deguelin-chain_3-iter_10000-seed_1909041546-nEffMin_2-rHatMax100_1442.stanFit"
+
+### Modelling NRa | MTa, PRa
+
+Wang did some preliminary analyses. He suggests modelling the variance of error may help avoid identifiability problem. For example : $\sigma = \beta * NRa$ with $\beta$ a hyperparameter.
+
+$$\begin{equation}
+\begin{split}
+y_{x_1} &= \begin{cases}
+y_{max, x_1} \left(1 - e^{-k_{x_1}(x_1 - x_{1,min})} \right) & \text{if $x_1>x_{1,min}$} \\
+0   & \text{otherwise}
+\end{cases}\\
+y_{x_2} &= \begin{cases}
+y_{max, x_2} \left(1 - e^{-k_{x_2}(x_2 - x_{2,min})} \right) & \text{if $x_2>x_{2,min}$} \\
+0   & \text{otherwise}
+\end{cases}\\
+y &= y_{x_1} + y_{x_2} \\
+y_{obs} & \sim \mathcal{N}(y, \sigma_{max,y}^2 \frac{y}{100})
+\end{split}
+\end{equation}$$
+
+Here
+
+- $y$ : KE of interest : NRa
+- $x_1$ : MTa Mitochondrial activity
+- $x_2$ : PRa Proteostasis activity
+
+Parameters are 
+
+- $k_{x_1}$, $k_{x_2}$ : 2 parameters
+- $x_{1,min}$, $x_{2,min}$ : 2 parameters
+- $y_{max, x_1} > 0$, $y_{max, x_2} = 100 - y_{max, x_1} > 0$ : 1 parameter
+- $\sigma_{max,y}$ : 1 parameter
+
+6 paramters in total.
+
+### Implementation detail 
+
+<span style="color:red">to complete</span>

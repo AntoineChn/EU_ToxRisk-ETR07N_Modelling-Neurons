@@ -151,12 +151,49 @@ chemi.common =
   tibble(chemi = .) %>%
   rowid_to_column(var = "chemiID")
 
-chemi.common.all = 
+chemi.common.all =
   c("Rotenone",
     "Deguelin",
-    chemi.common$chemi) %>%
+    reduce(
+      list(
+        KE1.other.chemi$chemi,
+        KE2.other.chemi$chemi,
+        KE3.other.chemi$chemi,
+        KE4.other.chemi$chemi
+      ),
+      intersect
+    )) %>%
   tibble(chemi = .) %>%
   rowid_to_column(var = "chemiID")
+
+common.chemi.uptoKE1 =
+  c("Rotenone",
+    "Deguelin",
+    KE1.other.chemi$chemi %>% unique())
+
+common.chemi.uptoKE2 =
+  c("Rotenone",
+    "Deguelin",
+    reduce(list(common.chemi.uptoKE1,
+                KE2.other.chemi$chemi),
+           intersect)
+    ) 
+
+common.chemi.uptoKE3 =
+  c("Rotenone",
+    "Deguelin",
+    reduce(list(common.chemi.uptoKE2,
+                KE3.other.chemi$chemi),
+           intersect)
+  ) 
+
+common.chemi.uptoKE4 =
+  c("Rotenone",
+    "Deguelin",
+    reduce(list(common.chemi.uptoKE3,
+                KE4.other.chemi$chemi),
+           intersect)
+  )
 
 # list(KE1.other.chemi,
 #      KE2.other.chemi,

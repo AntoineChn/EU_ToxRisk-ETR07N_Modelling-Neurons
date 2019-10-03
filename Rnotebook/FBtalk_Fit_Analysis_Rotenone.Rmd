@@ -757,21 +757,21 @@ p.data_pred =
   group_by(curve) %>%
   nest() %>%
   mutate(mito_resp = map(data, function(x){
-    a = c(0,
+    loc.a = c(0,
         x$x_min_PRa + c(
         0,
         10 ^ seq(log10(1E-5),
             log10(100 - x$x_min_PRa),
             by = 0.05)),
       100)
-    b = c(0,
+    loc.b = c(0,
         x$x_min_MTa_NRa + c(
         0,
         10 ^ seq(log10(1E-5),
             log10(100 - x$x_min_MTa_NRa),
-            by = 0.05)),
+            by = 0.01)),
       100)
-    union(a,b) %>%
+    union(loc.a,loc.b) %>% 
       sort(decreasing = F) %>%
       return()
   })) %>%
@@ -865,7 +865,6 @@ ggplot(data = p.data_pred,
 tmp.est.ponct = p.data_pred %>% 
   filter(replication == "map") %>% as.data.frame()
 tmp.est.ponct <- tmp.est.ponct[1,]
-
 
 # Parameters of stanFit for CIa
 tmp.pars_CIa = list(y_min     = tmp.est.ponct$y_min_CIa,

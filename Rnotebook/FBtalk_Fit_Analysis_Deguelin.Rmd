@@ -739,16 +739,25 @@ p.data_pred =
   ), rnorm) %>% unlist()) %>% 
   group_by(curve) %>%
   nest() %>%
-  mutate(mito_resp = map(data, function(x) # interpolation points
-    c(0,
-      x$x_min_PRa + c(
+  mutate(mito_resp = map(data, function(x){
+    loc.a = c(0,
+        x$x_min_PRa + c(
         0,
-        seq(log(0.01),
-            log(100 - x$x_min_PRa),
-            by = 0.05) %>%
-          exp(),
-        100
-      )))) %>%
+        10 ^ seq(log10(1E-5),
+            log10(100 - x$x_min_PRa),
+            by = 0.05)),
+      100)
+    loc.b = c(0,
+        x$x_min_MTa_NRa + c(
+        0,
+        10 ^ seq(log10(1E-5),
+            log10(100 - x$x_min_MTa_NRa),
+            by = 0.01)),
+      100)
+    union(loc.a,loc.b) %>% 
+      sort(decreasing = F) %>%
+      return()
+  })) %>%
   unnest() %>% 
   mutate(Prot_acti = # Predict PRa with correponding post_sample
            f.link.exp_tox_min(
@@ -785,16 +794,14 @@ p.data_pred =
 # <span style="color:red"> Problem </span>
 
 ```{r}
-
-p.data_pred %>% group_by(curve) %>% 
-  summarise(avg = mean(mean_y_max_PRa))
-
 p.data_pred %>% 
-  filter(mito_resp == 100   , Neurite_Area < 99) %>%
-  group_by(curve) %>% 
-  top_n(1, curve) %>% 
+  filter(mito_resp <= x_min_MTa_NRa + 1E-5 )  %>%
+  # group_by(curve) %>% 
+  # top_n(1, curve) %>% 
   select(Neurite_Area,
-         Neurite_Area_PRa, y_max_PRa_NRa, 
+         mito_resp, x_min_MTa_NRa,
+         x_min_PRa, Prot_acti, x_min_PRa_NRa,
+         Neurite_Area_PRa, y_max_PRa_NRa,
          Neurite_Area_MTa, y_max_MTa_NRa)
 
 ```

@@ -110,21 +110,26 @@ tmp.data.KE1 = bind_rows(tmp.data.KE1.ds1,
 tmp.data.KE1 %>% DT::datatable()
 ```
 
-
-### Chemical index
-
-```{r}
-tmp.data.KE1 %>% select(chemi, chemiID) %>% distinct()
-```
-
 ### Number of data per chemical
 
 ```{r}
-tmp.data.KE1 %>% select(chemi) %>% table()
+tmp.data.KE1 %>% select(chemi, chemiID) %>% 
+  group_by(chemiID) %>% 
+  count(chemi)
 ```
 
 
-## Sssumptions
+### Number of doses per chemical
+
+```{r}
+tmp.data.KE1 %>% select(chemi, chemiID, concentration_MuMol) %>% 
+  group_by(chemiID, chemi) %>% 
+  distinct(concentration_MuMol) %>% 
+  count(chemi) %>% 
+  rename(nb_data = n)
+```
+
+## Assumptions
 
 Recall parameters in a log-logistic model for KER X-> CIa 
 
@@ -477,7 +482,7 @@ post_sample.CIa =
 ##### For all Chemical
 
 ```{r}
-map(1:10, function(x) {
+map(chemi.common.all$chemiID, function(x) {
   tmp.chemiID = x
   chemi.common.all %>%  filter(chemiID == tmp.chemiID)
   

@@ -36,7 +36,8 @@ reloadpck()
         select(chemi, concentration_MuMol, replication, c1_activity) %>% 
         return()
     }) %>% bind_rows() %>% 
-    mutate(concentration_MuMol = as.numeric(concentration_MuMol))
+    mutate(concentration_MuMol = as.numeric(concentration_MuMol),
+           replication = str_replace(replication, "c1 inhibition", "c1 activity"))
 
   rm(data.file.name, sheet.names)
 }

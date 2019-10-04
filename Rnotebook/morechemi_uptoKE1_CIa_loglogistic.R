@@ -49,7 +49,6 @@ tmp.data.KE1
 
 stan_input.Neuro = list(
   "nchemi"             = tmp.data.KE1$chemi %>% n_distinct(),
-  "ndata_perChemi_CIa" = tmp.data.KE1 %>% count(chemi) %>% pull(n),
   "ndata_CIa"          = nrow(tmp.data.KE1),
   "dose_CIa"           = tmp.data.KE1$concentration_MuMol,
   "CIa_CIa"            = tmp.data.KE1$c1_activity,

@@ -26,7 +26,6 @@ functions{
 
 data {
   int <lower=0>   nchemi                      ; // number of different chemicals
-  int <lower=0>   ndata_perChemi_CIa[nchemi]  ; // number of data per chemi
   int             ndata_CIa                   ; // total number of data = sum(ndata_perChemi_CIa) 
   real<lower=0>   dose_CIa     [ndata_CIa] ; // data
   real<lower=0>   CIa_CIa      [ndata_CIa] ; // data

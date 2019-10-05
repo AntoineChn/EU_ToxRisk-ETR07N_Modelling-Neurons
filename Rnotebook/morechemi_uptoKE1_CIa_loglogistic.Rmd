@@ -1,5 +1,5 @@
 ---
-title: "step_by_step_uptoKE1_CIa_loglogistic"
+title: "morechemi_uptoKE1_CIa_loglogistic"
 output:
   html_document:
     toc: true
@@ -343,7 +343,6 @@ p.params
 ```
 
 ```{r}
-
 p.data_pred =
     p.params %>%
     tidyr::crossing(concentration_MuMol = c(10^(seq(-4, log10(10^4), 0.01)),

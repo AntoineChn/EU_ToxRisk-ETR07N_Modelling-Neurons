@@ -62,10 +62,12 @@ Let's implement user specified linkind function for each Key event relationship.
 
 ## X -> CIa : Log-logistic
 
-Veriables are
+The veriables are
 
 - $y$ : KE of interest : CIa
 - $x$ : Parent node of $y$ in the AOP : Dose
+
+The model is given by : 
 
 $$\begin{equation}
 \begin{split}
@@ -74,36 +76,41 @@ y_{obs} &\sim \mathcal{N}(y, \sigma_{y}^2)
 \end{split}
 \end{equation}$$
 
-Parameters are :
+Parameters in this model are :
 
-- $y_{max}$
-- $y_{min}$
+- $y_{max}$ : max of logistic function
+- $y_{min}$ : min of logistic function
 - $x_{50}$ : the center of symmetry of the logistic (transformed $tanh()$) function.
-- $\sigma_{y}$
+- $\sigma_{y}$ : observational error
 
-### Assumptions : in practice
+**Remark**
 
-We assume that for X->CIa, some parameters are shared by all chemicals. some parameters are not.
+In practice, **different chemicals may have different parameters in the upper log-logistic function**.
 
-#### $y_{max,\,\text{CIa}}$
+<!-- - some parameters are **not chemical specific**.  -->
+<!-- - some parameters are **chemical specific**. -->
+
+We assume that :
+
+For $y_{max,\,\text{CIa}}$ :
 
 - $y_{max,\,\text{CIa},\text{Rot}}$
 - $y_{max,\,\text{CIa},\text{Deg}}$
-- $y_{max,\,\text{CIa},\text{others}} = mean(y_{max,\,\text{CIa},\text{Rot}}, y_{max,\,\text{CIa},\text{Deg}})$
+- $y_{max,\,\text{CIa},\text{others}} = \frac{y_{max,\,\text{CIa},\text{Rot}} +  y_{max,\,\text{CIa},\text{Deg}}}{2}$ : all chemicals other than Rot and Deg <span style="color:red">share the same $y_{max\, \text{CIa}}$</span>
 
-#### $y_{min,\,\text{CIa}}$
+For $y_{min,\,\text{CIa}}$ :
 
 - $y_{min,\,\text{CIa},\text{Rot}}$
 - $y_{min,\,\text{CIa},\text{Deg}}$
-- $y_{min,\,\text{CIa},\text{others}} = mean(y_{min,\,\text{CIa},\text{Rot}}, y_{min,\,\text{CIa},\text{Deg}})$
+- $y_{min,\,\text{CIa},\text{others}} = \frac{y_{min,\,\text{CIa},\text{Rot}}+ y_{min,\,\text{CIa},\text{Deg}}}{2}$ : all chemicals other than Rot and Deg <span style="color:red">share the same $y_{min,\,\text{CIa}}$</span>
 
-#### $k_{\text{CIa}}$
+For $k_{\text{CIa}}$ : 
 
 - $k_{\text{CIa},\text{Rot}}$
 - $k_{\text{CIa},\text{Deg}}$
-- $k_{\text{CIa},\text{others}} = mean(k_{\text{CIa},\text{Rot}}, k_{\text{CIa},\text{Deg} })$
+- $k_{\text{CIa},\text{others}} = \frac{k_{\text{CIa},\text{Rot}}+ k_{\text{CIa},\text{Deg} }}{2}$ : all chemicals other than Rot and Deg <span style="color:red">share the same $k_{\text{CIa}}$</span>
 
-#### chemical specific $x_{50}$
+For $x_{50}$ : <span style="color:red">$x_{50}$ differs for each chemicals</span>
 
 - $x_{50,\; \text{Rotenone}}$
 - $x_{50,\; \text{Deguelin}}$
@@ -116,18 +123,9 @@ We assume that for X->CIa, some parameters are shared by all chemicals. some par
 - $x_{50,\; \text{Pyrimidifen}}$
 - $x_{50,\; \text{Thifluzamide}}$
 
-## CIa -> MTa : truncated Linear
+## CIa -> MTa Modelling
 
-### Preliminary study
-
-1. Use
-    - the dose of KE2 data set
-    - the MAP point estimator of `"morechemi_uptoKE1_CIa_loglogistic*.stanFit"` to predict `CIa_pred`
-1. Plot `MTa` wrt `CIa_pred`
-
-#### Load previous fit
-
-##### data
+### Data on KE2 MTa
 
 ```{r eval=T, results='hide'}
 source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R'))
@@ -146,7 +144,6 @@ source(glob_params$f.RScript('load-and-reshape-morechemi.R'))
   tmp.data.KE1 = bind_rows(tmp.data.KE1.ds1,
                            tmp.data.KE1.ds2) %>%
     arrange(chemiID, concentration_MuMol)
-  
 }
 
 {# joint All data concerning KE2
@@ -177,6 +174,8 @@ tmp.data.KE2 %>% select(chemi, chemiID) %>%
 
 **Number of doses per chemical**
 
+When we have more than one data, they may just be replicates for the same dose. Let's check how many doses for each chemical
+
 ```{r}
 tmp.data.KE2 %>% select(chemi, chemiID, concentration_MuMol) %>% 
   group_by(chemiID, chemi) %>% 
@@ -185,7 +184,14 @@ tmp.data.KE2 %>% select(chemi, chemiID, concentration_MuMol) %>%
   rename(nb_data = n)
 ```
 
-##### Fit
+### Preliminary study
+
+1. Wang predicts `CIa_pred` with
+    - the dose of KE2 data set
+    - the MAP point estimator of `"morechemi_uptoKE1_CIa_loglogistic*.stanFit"`
+1. Then Wang does plot for `MTa` w.r.t. `CIa_pred` in order to get some insight on **How MTa and CIa might be related**
+
+#### Load previous fit
 
 ```{r include=T, cache = FALSE, results='hide'}
 tmp.stanfile.name = "morechemi_uptoKE1_CIa_loglogistic"
@@ -213,9 +219,13 @@ fit_morechemi_uptoKE1_CIa_loglogistic =
   readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name[1]))
 ```
 
-The stanFit used in this report corresponds to
+The MAP estimates come from the following stanFit :
 
-- `r tmp.stanFit.name[1]`
+```{r}
+print(tmp.stanFit.name[1])
+```
+
+The post-summary of this stanFit is : 
 
 ```{r}
 tmp.fit = fit_morechemi_uptoKE1_CIa_loglogistic
@@ -248,14 +258,15 @@ la.summary_all = summary(tmp.fit,
 la.summary_all$MAP = la_all[which.max(la_all$lp__),] %>% as.matrix() %>% c()
 la.summary_all = la.summary_all %>% select(MAP, mean,se_mean, sd, `5%`, `95%`,n_eff,Rhat)
 
-la.summary_all %>% round(.,digits = 3) %>%  DT::datatable(.,options = list(pageLength = dim(.)[1]))
-# la.summary_all %>% round(.,digits = 3) %>%  DT::datatable()
+# la.summary_all %>% round(.,digits = 3) %>%  DT::datatable(.,options = list(pageLength = dim(.)[1]))
+la.summary_all %>% round(.,digits = 3) %>%  DT::datatable()
+# la.summary_all
 ```
 
-### Diagnostic
+
+### Plot MTa w.r.t. CIa_pred
 
 #### CIa_pred for All chemical {.tabset .tabset-fade .tabset-pills}
-
 
 ```{r}
 tmp.est.ponct = la.map_all
@@ -343,6 +354,12 @@ ggplot(data = p.data %>% filter(chemiID >= 3),
   scale_y_continuous(limit=c(0,150),oob=squish)
 ```
 
+#### Remark
+
+**The ohter chemicals (All except Rot and Deg) seem to have smaller MTa values than Rot and Deg.**
+
+Wang decides to try linear anyway because new estimates of chemical specific $x_{50}$ may change this situation.
+
 ### Modelling CIa -> MTa
 
 $$\begin{equation}
@@ -362,33 +379,30 @@ Here
 - $y$ : KE of interest : MTa
 - $x$ : Parent node of $y$ in the AOP.
 
-```{r}
-cleanup()
-rm(fit_morechemi_uptoKE1_CIa_loglogistic)
-```
+**Remark**
+
+Be the nature of AOP, Wang assumes the three parameters 
+$\beta$
+$\beta_0$
+$\sigma$
+are <span style="color:red">**shared by all chemicals**</span>
+
+-----
+
+----
 
 # Analysis of fit
 
 ## Load previous fit
 
-
-**Which chemicals**
-
 ```{r}
-(chemiID_chosen = (1:10)[-c(5,7,10)])
-
+chemiID_chosen = (1:10)
 chemiID_chosen = chemi.common.all %>% filter(chemiID %in% chemiID_chosen) %>% 
-  mutate(chemiID_New = row_number())
+  mutate(chemiID_Params = row_number())
 
 tmp.chemi = paste(chemiID_chosen$chemiID,collapse = '.')
-
-chemiID_chosen
 ```
 
-- <span style="color:red">Index of chemical specific parameters corresponds to `chemiID_New`</span>
-- <span style="color:red">Index of raw data corresponds to `chemiID`</span>
-
-**Which Fit**
 
 ```{r include=T, cache = FALSE, results='hide'}
 tmp.stanfile.name = "morechemi_uptoKE2_MTa_linear"
@@ -408,17 +422,33 @@ f.stanFit.filter(pattern = tmp.stanFit.ts[1],
 # tmp.stanFit.name = f.stanFit.filter(pattern = tmp.stanFit.ts[1],
 #                                     chemi = tmp.chemi,
 #                                     extension = "stanFit")
-tmp.stanFit.name = "morechemi_uptoKE2_MTa_linear-ts_1910051109-chemi_1.2.3.4.6.8.9-chain_3-iter_5000-seed_1910051109-nEffMin_2175-rHatMax100_100.stanFit"
+tmp.stanFit.name = "morechemi_uptoKE2_MTa_linear-ts_1910052023-chemi_1.2.3.4.5.6.7.8.9.10-chain_3-iter_5000-seed_1910052023-nEffMin_594-rHatMax100_100.stanFit"
 
 fit_morechemi_uptoKE2_MTa_linear =
   # readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name[1]))
   readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name[1]))
 ```
 
+The rest of the report analyses the following stanFit :
 
-The stanFit used in this section corresponds to 
+```{r}
+print(tmp.stanFit.name)
+```
 
-- `r tmp.stanFit.name`
+### Remark 
+
+We may not use all chemicals to fit the model. The fit we are using used the data that correspond to the folloing listed chemicals
+
+```{r}
+chemiID_chosen
+```
+
+If `chemiID_Params` and `chemiID` are different, then not all data is used to fit the model.
+
+- <span style="color:red">Index of chemical specific parameters corresponds to `chemiID_Params`</span>, 
+    - e.g. `x_50_CIa[4]` corresponds to the chemical whose `chemiID_Params == 4`
+- <span style="color:red">Index of raw data corresponds to `chemiID`</span>
+    - the `chemiID` attribut of data sets correponds to the chemical whose `chemiID` is the same as data's `chemiID`
 
 ## Check MCMC samples only {.tabset .tabset-fade .tabset-pills}
 
@@ -471,38 +501,17 @@ la.summary_all = la.summary_all %>% select(MAP, mean,se_mean, sd, `5%`, `95%`,n_
 
 la.summary_all %>% round(.,digits = 3) %>%  DT::datatable(.,options = list(pageLength = dim(.)[1]))
 # la.summary_all %>% round(.,digits = 3) %>%  DT::datatable()
+# la.summary_all
 ```
 
-Highlight chemicals whose x_50 has a posterior-sd higher than 10
+Highlight chemicals whose x_50 has a posterior-sd higher than 10, if **exists then pay attention to their histogram**.
 
 ```{r}
-la.summary_all[which (la.summary_all$sd > 10), ]
+la.summary_all[which (la.summary_all$sd > 10), ] %>% round(.,digits = 3) %>% datatable()
 ```
 
 
-### CIa 
-
-
-
-#### Traceplots
-
-```{r}
-tmp.parsName
-
-stan_trace(tmp.fit, pars = c(
-  "y_max_CIa_Rot",
-  "y_min_CIa_Rot",
-  "k_CIa_Rot",
-  "y_max_CIa_Deg",
-  "y_min_CIa_Deg",
-  "k_CIa_Deg"))
-
-stan_trace(tmp.fit, pars = "x_50_CIa_All")
-stan_trace(tmp.fit, pars = c("sigma_CIa",
-                             "lp__"))
-```
-
-
+### CIa {.tabset .tabset-fade .tabset-pills}
 
 #### Posterior distribution
 
@@ -520,6 +529,21 @@ stan_hist(tmp.fit, pars = c("sigma_CIa",
                              "lp__"))
 ```
 
+#### Traceplots
+
+```{r}
+stan_trace(tmp.fit, pars = c(
+  "y_max_CIa_Rot",
+  "y_min_CIa_Rot",
+  "k_CIa_Rot",
+  "y_max_CIa_Deg",
+  "y_min_CIa_Deg",
+  "k_CIa_Deg"))
+
+stan_trace(tmp.fit, pars = "x_50_CIa_All")
+stan_trace(tmp.fit, pars = c("sigma_CIa",
+                             "lp__"))
+```
 
 #### Autocorrelation
 
@@ -540,13 +564,6 @@ stan_ac(tmp.fit, pars = c("sigma_CIa",
 
 ### MTa {.tabset .tabset-fade .tabset-pills}
 
-#### Traceplots
-
-```{r}
-stan_trace(tmp.fit,
-          pars = tmp.pars.MTa,nrow = 2)
-```
-
 #### Posterior distribution
 
 ```{r}
@@ -554,6 +571,12 @@ stan_hist(tmp.fit,
           pars = tmp.pars.MTa,nrow = 2)
 ```
 
+#### Traceplots
+
+```{r}
+stan_trace(tmp.fit,
+          pars = tmp.pars.MTa,nrow = 2)
+```
 
 #### Autocorrelation
 
@@ -561,6 +584,8 @@ stan_hist(tmp.fit,
 stan_ac(tmp.fit,
         pars = tmp.pars.MTa,nrow = 2)
 ```
+
+
 
 ## Check fit with data : Visual validation
 
@@ -597,7 +622,7 @@ tmp.data.KE2 = bind_rows(tmp.data.KE2.ds1,
   inner_join(chemiID_chosen, by = c("chemiID", "chemi"))
 ```
 
-### Posterior predictions
+### Fit and Posterior predictions
 
 ```{r}
 tmp.est.ponct = la.map_all
@@ -632,15 +657,12 @@ post_sample.CIa =
              starts_with("x_50_CIa_All"),
              starts_with("k_CIa_All")),
            key = "params_name", value = "parames_value") %>%
-    mutate(chemiID_New = str_sub(params_name,
+    mutate(chemiID_Params = str_sub(params_name,
                              start = str_locate(params_name,pattern = "\\.")[,1] + 1,
                              end = -1) %>% as.integer(),
            params_name = str_sub(params_name,
                                  end = str_locate(params_name,pattern = "_All")[,1] - 1)) %>% 
-  inner_join(chemiID_chosen, by = "chemiID_New")
-
-
-
+  inner_join(chemiID_chosen, by = "chemiID_Params")
 
 ```
 
@@ -709,7 +731,6 @@ ggplot(data = p.data,
   scale_x_continuous(trans = "log10") +
   facet_wrap(~ chemi) +
   ggtitle("y of solid lines and dots are both predicted")
-
 ```
 
 #### MTa
@@ -751,10 +772,9 @@ ggplot(data = p.data,
   ggtitle("Dose -> MTa, fit plot. Dots are raw data. red line is fit with MAP, gray lines are fit with post-samples")
 ```
 
-#### CIa -> MTa {.tabset .tabset-fade .tabset-pills}
+#### CIa -> MTa 
 
 ```{r}
-
 p.data = tmp.data.KE2
 
 p.data_pred =
@@ -820,10 +840,14 @@ ggplot(data = p.data,
   ggtitle("CIa -> MTa (colored dots representing (CIa_pred, MTa_obs) where CIa_pred is calculated with raw data and MAP estimate")
 ```
 
-##### Without CIa_pred of raw data
+##### Posterior predictions
+
+**Remark**
+
+Same for all chemicals as they share the same parameters.
 
 ```{r}
-ggplot(data = p.data,
+ggplot(data = p.data %>% filter(chemiID ==1),
            aes(x = c1_activity,
                y = mito_resp, colour = replication)) +
   geom_line (
@@ -839,8 +863,8 @@ ggplot(data = p.data,
     colour = "red"
   ) +
   # geom_point(data = . %>% filter(curve == 0)) +
-  scale_y_continuous(limit = c(0, 120), oob = censor) +
-  facet_wrap(~ chemi) +
-  ggtitle("CIa -> MTa prediction plot")
+  scale_y_continuous(limit = c(0, 120), oob = censor)
 ```
+
+
 

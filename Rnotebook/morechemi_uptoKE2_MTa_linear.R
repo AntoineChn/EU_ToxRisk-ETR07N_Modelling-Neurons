@@ -49,36 +49,37 @@ source(glob_params$f.RScript('load-and-reshape-morechemi.R'))
   
   tmp.data.KE2.ds1 = KE2.both %>% 
     inner_join(chemi.common.all, by = "chemi") %>% 
-    filter(., concentration_MuMol > 0) 
+    filter(., concentration_MuMol > 0, mito_resp > 0) 
   tmp.data.KE2.ds2 = KE2.other.chemi %>% 
     inner_join(chemi.common.all, by = "chemi") %>% 
-    filter(., concentration_MuMol > 0)
+    filter(., concentration_MuMol > 0, mito_resp > 0)
   
   tmp.data.KE2 = bind_rows(tmp.data.KE2.ds1,
                            tmp.data.KE2.ds2) %>% 
     arrange(chemiID, concentration_MuMol)
 }
 
+
 # Choose chemicals 
-(chemiID_chosen = (1:10)[-c(5,7,10)])
+(chemiID_chosen = (1:10))
 chemiID_chosen = chemi.common.all %>% filter(chemiID %in% chemiID_chosen) %>% 
-  mutate(chemiID_New = row_number())
+  mutate(chemiID_Param = row_number())
 
 # train data set
 tmp.train.data.KE1 = tmp.data.KE1 %>% inner_join(chemiID_chosen, by = c("chemiID","chemi"))
 tmp.train.data.KE2 = tmp.data.KE2 %>% inner_join(chemiID_chosen, by = c("chemiID","chemi"))
 
 stan_input.Neuro = list(
-  "nchemi"             = tmp.train.data.KE1$chemiID_New %>% n_distinct(),
+  "nchemi"             = tmp.train.data.KE1$chemiID_Param %>% n_distinct(),
   "ndata_CIa"          = nrow(tmp.train.data.KE1),
   "dose_CIa"           = tmp.train.data.KE1$concentration_MuMol,
   "CIa_CIa"            = tmp.train.data.KE1$c1_activity,
-  "chemiID_CIa"        = tmp.train.data.KE1$chemiID_New
+  "chemiID_CIa"        = tmp.train.data.KE1$chemiID_Param
   ,
   "ndata_MTa"          = nrow(tmp.train.data.KE2),
   "dose_MTa"           = tmp.train.data.KE2$concentration_MuMol,
   "MTa_MTa"            = tmp.train.data.KE2$mito_resp,
-  "chemiID_MTa"        = tmp.train.data.KE2$chemiID_New 
+  "chemiID_MTa"        = tmp.train.data.KE2$chemiID_Param 
 )
 
 p.pars.CIa   = c(

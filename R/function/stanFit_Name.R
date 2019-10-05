@@ -29,13 +29,13 @@ f.stanFit.newName = function(chemi,
 # Read different timestamp ------------------------------------------------
 
 f.stanFit.filter = function(pattern,chemi = "Rotenone", extension = "stanFit"){
-  tmp.fitnames1 = list.files("stan/fit", 
+  tmp.fitnames1 = list.files(here::here("stan/fit"), 
                             pattern = glob2rx(paste0("*",pattern,
-                                                     "*.stanFit"),)
+                                                     "*.stanFit"))
                             )
-  tmp.fitnames2 = list.files("stan/fit", 
+  tmp.fitnames2 = list.files(here::here("stan/fit"), 
                             pattern = glob2rx(paste0("*",chemi,
-                                                     "*.stanFit"),)
+                                                     "*.stanFit"))
   )
   tmp.fitnames = intersect(tmp.fitnames1, tmp.fitnames2)
   return(tmp.fitnames)

@@ -1,0 +1,846 @@
+---
+title: "morechemi_uptoKE2_MTa_linear"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    code_folding: hide
+    number_sections: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    fig_caption: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '..')
+knitr::opts_chunk$set(
+  cache = FALSE,
+  out.width = "100%",
+  fig.align = 'center',
+  fig.width = 8,
+  fig.asp = 0.618,  # 1 / phi
+  fig.show = "hold",
+  warning=FALSE, message=FALSE,
+  eval = TRUE, echo = TRUE
+)
+```
+
+```{r include=F}
+file.copy("./img", "./Rnotebook", recursive=TRUE, overwrite=T)
+```
+
+
+```{r include=FALSE}
+source("GlobalParameters.R")
+source(glob_params$f.RFunc("stanFit_Name.R"))
+source(glob_params$f.RScript("CPDs.R"))
+pckToLoad = c('tidyverse', 'DT', 
+              "citr","readxl",'scales',"rstan","reshape2", "rgl",
+              "bayesplot")
+reloadpck()
+```
+
+
+Modelling qAOP using DBN
+
+# AOP ETR07N
+
+```{r echo=FALSE, out.width='100%'}
+knitr::include_graphics('./img/AOP_ETR07N.png')
+```
+
+- Chemical : `Dose` for chemical concentration
+- KE1 : `CIa` for complex I activity
+- KE2 : `MTa` for Mitochondrial activity
+- KE3 : `PRa` for proteostasis activity
+- KE4 : `NRa` for Neurite Area
+
+# Model description
+
+Let's implement user specified linkind function for each Key event relationship.
+
+## X -> CIa : Log-logistic
+
+Veriables are
+
+- $y$ : KE of interest : CIa
+- $x$ : Parent node of $y$ in the AOP : Dose
+
+$$\begin{equation}
+\begin{split}
+y &= \frac{y_{max} - y_{min}}{1 + e^{-k\left(\ln(x) - \ln(x_{50}) \right)}} + y_{min}\\
+y_{obs} &\sim \mathcal{N}(y, \sigma_{y}^2)
+\end{split}
+\end{equation}$$
+
+Parameters are :
+
+- $y_{max}$
+- $y_{min}$
+- $x_{50}$ : the center of symmetry of the logistic (transformed $tanh()$) function.
+- $\sigma_{y}$
+
+### Assumptions : in practice
+
+We assume that for X->CIa, some parameters are shared by all chemicals. some parameters are not.
+
+#### $y_{max,\,\text{CIa}}$
+
+- $y_{max,\,\text{CIa},\text{Rot}}$
+- $y_{max,\,\text{CIa},\text{Deg}}$
+- $y_{max,\,\text{CIa},\text{others}} = mean(y_{max,\,\text{CIa},\text{Rot}}, y_{max,\,\text{CIa},\text{Deg}})$
+
+#### $y_{min,\,\text{CIa}}$
+
+- $y_{min,\,\text{CIa},\text{Rot}}$
+- $y_{min,\,\text{CIa},\text{Deg}}$
+- $y_{min,\,\text{CIa},\text{others}} = mean(y_{min,\,\text{CIa},\text{Rot}}, y_{min,\,\text{CIa},\text{Deg}})$
+
+#### $k_{\text{CIa}}$
+
+- $k_{\text{CIa},\text{Rot}}$
+- $k_{\text{CIa},\text{Deg}}$
+- $k_{\text{CIa},\text{others}} = mean(k_{\text{CIa},\text{Rot}}, k_{\text{CIa},\text{Deg} })$
+
+#### chemical specific $x_{50}$
+
+- $x_{50,\; \text{Rotenone}}$
+- $x_{50,\; \text{Deguelin}}$
+- $x_{50,\; \text{Antimycin A}}$
+- $x_{50,\; \text{Azoxystrobin}}$
+- $x_{50,\; \text{Carboxine}}$
+- $x_{50,\; \text{Fenpyroximate}}$
+- $x_{50,\; \text{Mepronil}}$
+- $x_{50,\; \text{Pyraclostrobin}}$
+- $x_{50,\; \text{Pyrimidifen}}$
+- $x_{50,\; \text{Thifluzamide}}$
+
+## CIa -> MTa : truncated Linear
+
+### Preliminary study
+
+1. Use
+    - the dose of KE2 data set
+    - the MAP point estimator of `"morechemi_uptoKE1_CIa_loglogistic*.stanFit"` to predict `CIa_pred`
+1. Plot `MTa` wrt `CIa_pred`
+
+#### Load previous fit
+
+##### data
+
+```{r eval=T, results='hide'}
+source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R'))
+source(glob_params$f.RScript('load-and-reshape-morechemi.R'))
+```
+
+```{r}
+{# joint All data concerning KE1
+  tmp.data.KE1.ds1 = KE1.both %>%
+    inner_join(chemi.common.all, by = "chemi") %>%
+    filter(., concentration_MuMol > 0, c1_activity > 0)
+  tmp.data.KE1.ds2 = KE1.other.chemi %>%
+    inner_join(chemi.common.all, by = "chemi") %>%
+    filter(., concentration_MuMol > 0, c1_activity > 0)
+  
+  tmp.data.KE1 = bind_rows(tmp.data.KE1.ds1,
+                           tmp.data.KE1.ds2) %>%
+    arrange(chemiID, concentration_MuMol)
+  
+}
+
+{# joint All data concerning KE2
+  tmp.data.KE2.ds1 = KE2.both %>%
+    inner_join(chemi.common.all, by = "chemi") %>%
+    filter(., concentration_MuMol > 0, mito_resp > 0)
+  tmp.data.KE2.ds2 = KE2.other.chemi %>%
+    inner_join(chemi.common.all, by = "chemi") %>%
+    filter(., concentration_MuMol > 0, mito_resp > 0)
+  
+  tmp.data.KE2 = bind_rows(tmp.data.KE2.ds1,
+                           tmp.data.KE2.ds2) %>%
+    arrange(chemiID, concentration_MuMol)
+}
+
+# tmp.data.KE1
+tmp.data.KE2
+```
+
+**Number of data per chemical**
+
+```{r}
+tmp.data.KE2 %>% select(chemi, chemiID) %>% 
+  group_by(chemiID) %>% 
+  count(chemi) %>% 
+  rename(nb_data = n)
+```
+
+**Number of doses per chemical**
+
+```{r}
+tmp.data.KE2 %>% select(chemi, chemiID, concentration_MuMol) %>% 
+  group_by(chemiID, chemi) %>% 
+  distinct(concentration_MuMol) %>% 
+  count(chemi) %>% 
+  rename(nb_data = n)
+```
+
+##### Fit
+
+```{r include=T, cache = FALSE, results='hide'}
+tmp.stanfile.name = "morechemi_uptoKE1_CIa_loglogistic"
+
+tmp.chemi = "all"
+f.stanFit.filter(pattern = tmp.stanfile.name, 
+                 chemi = tmp.chemi, 
+                 extension = "stanFit")
+tmp.stanFit.ts = f.stanFit.filter.timestamp(pattern = tmp.stanfile.name,
+                                            chemi = tmp.chemi,
+                           newest.first = T)
+tmp.stanFit.ts
+
+f.stanFit.filter(pattern = tmp.stanFit.ts[1],
+                                    chemi = tmp.chemi,
+                                    extension = "stanFit")
+
+# tmp.stanFit.name = f.stanFit.filter(pattern = tmp.stanFit.ts[1],
+#                                     chemi = tmp.chemi,
+#                                     extension = "stanFit")
+tmp.stanFit.name = "morechemi_uptoKE1_CIa_loglogistic-ts_1910041342-chemi_all-chain_3-iter_5000-seed_1910041342-nEffMin_532-rHatMax100_100.stanFit"
+
+fit_morechemi_uptoKE1_CIa_loglogistic =
+  # readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name[1]))
+  readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name[1]))
+```
+
+The stanFit used in this report corresponds to
+
+- `r tmp.stanFit.name[1]`
+
+```{r}
+tmp.fit = fit_morechemi_uptoKE1_CIa_loglogistic
+
+tmp.pars.CIa   = c(
+  "y_min_CIa_Rot",
+  "y_min_CIa_Deg",
+  "y_max_CIa_Rot",
+  "y_max_CIa_Deg",
+  "k_CIa_Rot",
+  "k_CIa_Deg",
+  "y_min_CIa_All",
+  "y_max_CIa_All",
+  "x_50_CIa_All",
+  "k_CIa_All",
+  # "log_x_50_CIa_All",
+  "sigma_CIa")
+
+tmp.parsName = c(tmp.pars.CIa,
+                 "lp__")
+
+la_all = as.data.frame(rstan::extract(tmp.fit, pars = tmp.parsName))
+la.mean_all = la_all %>% colMeans() %>% t() %>% as.data.frame()
+la.map_all  = la_all[which.max(la_all$lp__),] 
+
+la.summary_all = summary(tmp.fit,
+                         probs = c(0.05, 0.95),
+                         pars = tmp.parsName)$summary %>% as.data.frame()
+
+la.summary_all$MAP = la_all[which.max(la_all$lp__),] %>% as.matrix() %>% c()
+la.summary_all = la.summary_all %>% select(MAP, mean,se_mean, sd, `5%`, `95%`,n_eff,Rhat)
+
+la.summary_all %>% round(.,digits = 3) %>%  DT::datatable(.,options = list(pageLength = dim(.)[1]))
+# la.summary_all %>% round(.,digits = 3) %>%  DT::datatable()
+```
+
+### Diagnostic
+
+#### CIa_pred for All chemical {.tabset .tabset-fade .tabset-pills}
+
+
+```{r}
+tmp.est.ponct = la.map_all
+
+p.params =
+  tmp.est.ponct %>%
+  mutate(y_min_CIa_Rot  = NULL,
+         y_max_CIa_Rot  = NULL,
+         k_CIa_Rot      = NULL,
+         y_min_CIa_Deg  = NULL,
+         y_max_CIa_Deg  = NULL,
+         k_CIa_Deg      = NULL,
+         sigma_CIa      = NULL,
+         lp__           = NULL) %>% 
+  gather(c(starts_with("y_min_CIa_All"),
+           starts_with("y_max_CIa_All"),
+           starts_with("x_50_CIa_All"),
+           starts_with("k_CIa_All")),
+         key = "params_name", value = "parames_value") %>% 
+  mutate(chemiID = str_sub(params_name, 
+                           start = str_locate(params_name,pattern = "\\.")[,1] + 1,
+                           end = -1) %>% as.integer(),
+         params_name = str_sub(params_name,
+                               end = str_locate(params_name,pattern = "_All")[,1] - 1)) %>% 
+  spread(key = params_name, value = parames_value)
+
+p.params
+```
+
+```{r}
+p.data = 
+  p.params %>% 
+    right_join(tmp.data.KE2) %>% 
+    mutate(CIa_pred = f.link.lgstc(
+      x = log(concentration_MuMol),
+      params = list(
+        y_min     = y_min_CIa,
+        y_max     = y_max_CIa,
+        x_50      = x_50_CIa %>% log(),
+        k         = k_CIa
+      ))) %>% 
+  mutate(is_rot_deg = if_else(chemiID <= 2, "yes", "no"))
+```
+
+##### all chemicals together
+
+```{r}
+ggplot(data = p.data,
+       aes(x = CIa_pred,
+           y = mito_resp,
+           shape = is_rot_deg,
+           colour = chemi)) +
+  geom_point(aes(size = 2) ) +
+  scale_x_continuous(limit=c(0,120)) +
+  scale_y_continuous(limit=c(0,150),oob=squish)
+```
+
+##### Rot and Deg
+
+```{r}
+ggplot(data = p.data %>% filter(chemiID < 3),
+       aes(x = CIa_pred,
+           y = mito_resp,
+           colour = chemi)) +
+  geom_point(aes(x = CIa_pred,
+                 y = mito_resp,
+                 shape = is_rot_deg,
+                 size = 2))+
+  scale_x_continuous(limit=c(0,120)) +
+  scale_y_continuous(limit=c(0,150),oob=squish)
+```
+
+##### Other chemicals
+
+```{r}
+ggplot(data = p.data %>% filter(chemiID >= 3),
+       aes(x = CIa_pred,
+           y = mito_resp,
+           colour = chemi)) +
+  geom_point(aes(x = CIa_pred,
+                 y = mito_resp,
+                 shape = is_rot_deg,
+                 size = 2))+
+  scale_x_continuous(limit=c(0,120)) +
+  scale_y_continuous(limit=c(0,150),oob=squish)
+```
+
+### Modelling CIa -> MTa
+
+$$\begin{equation}
+\begin{split}
+y_{tmp} &= \beta x + \beta_{0} \\
+y &= \begin{cases}
+120 & \text{if $y_{tmp}>120$} \\
+0   & \text{if $y_{tmp}<0$}   \\
+y_{tmp} & \text{otherwise}
+\end{cases}\\
+y_{obs} &\sim \mathcal{N}(y, \sigma_{y}^2)
+\end{split}
+\end{equation}$$
+
+Here
+
+- $y$ : KE of interest : MTa
+- $x$ : Parent node of $y$ in the AOP.
+
+```{r}
+cleanup()
+rm(fit_morechemi_uptoKE1_CIa_loglogistic)
+```
+
+# Analysis of fit
+
+## Load previous fit
+
+
+**Which chemicals**
+
+```{r}
+(chemiID_chosen = (1:10)[-c(5,7,10)])
+
+chemiID_chosen = chemi.common.all %>% filter(chemiID %in% chemiID_chosen) %>% 
+  mutate(chemiID_New = row_number())
+
+tmp.chemi = paste(chemiID_chosen$chemiID,collapse = '.')
+
+chemiID_chosen
+```
+
+- <span style="color:red">Index of chemical specific parameters corresponds to `chemiID_New`</span>
+- <span style="color:red">Index of raw data corresponds to `chemiID`</span>
+
+**Which Fit**
+
+```{r include=T, cache = FALSE, results='hide'}
+tmp.stanfile.name = "morechemi_uptoKE2_MTa_linear"
+
+f.stanFit.filter(pattern = tmp.stanfile.name, 
+                 chemi = tmp.chemi, 
+                 extension = "stanFit")
+tmp.stanFit.ts = f.stanFit.filter.timestamp(pattern = tmp.stanfile.name,
+                                            chemi = tmp.chemi,
+                           newest.first = T)
+tmp.stanFit.ts
+
+f.stanFit.filter(pattern = tmp.stanFit.ts[1],
+                                    chemi = tmp.chemi,
+                                    extension = "stanFit")
+
+# tmp.stanFit.name = f.stanFit.filter(pattern = tmp.stanFit.ts[1],
+#                                     chemi = tmp.chemi,
+#                                     extension = "stanFit")
+tmp.stanFit.name = "morechemi_uptoKE2_MTa_linear-ts_1910051109-chemi_1.2.3.4.6.8.9-chain_3-iter_5000-seed_1910051109-nEffMin_2175-rHatMax100_100.stanFit"
+
+fit_morechemi_uptoKE2_MTa_linear =
+  # readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name[1]))
+  readr::read_rds(glob_params$Stan$f.FitPath(tmp.stanFit.name[1]))
+```
+
+
+The stanFit used in this section corresponds to 
+
+- `r tmp.stanFit.name`
+
+## Check MCMC samples only {.tabset .tabset-fade .tabset-pills}
+
+```{r eval = F}
+get_stancode(fit_morechemi_uptoKE2_MTa_linear) %>% cat
+options(scipen=0, digits=7)
+fit_morechemi_uptoKE2_MTa_linear
+check_hmc_diagnostics(fit_morechemi_uptoKE2_MTa_linear)
+```
+
+
+```{r}
+tmp.fit = fit_morechemi_uptoKE2_MTa_linear
+
+tmp.pars.CIa   = c(
+  "y_min_CIa_Rot",
+  "y_min_CIa_Deg",
+  "y_max_CIa_Rot",
+  "y_max_CIa_Deg",
+  "k_CIa_Rot",
+  "k_CIa_Deg",
+  "y_min_CIa_All",
+  "y_max_CIa_All",
+  "x_50_CIa_All",
+  "k_CIa_All",
+  # "log_x_50_CIa_All",
+  "sigma_CIa"
+  )
+
+tmp.pars.MTa = c(
+  "beta_MTa",
+  "beta_0_MTa",
+  "sigma_MTa"
+)
+
+tmp.parsName = c(tmp.pars.CIa,
+                 tmp.pars.MTa,
+                 "lp__")
+
+la_all = as.data.frame(rstan::extract(tmp.fit, pars = tmp.parsName))
+la.mean_all = la_all %>% colMeans() %>% t() %>% as.data.frame()
+la.map_all  = la_all[which.max(la_all$lp__),] 
+
+la.summary_all = summary(tmp.fit,
+                         probs = c(0.05, 0.95),
+                         pars = tmp.parsName)$summary %>% as.data.frame()
+
+la.summary_all$MAP = la_all[which.max(la_all$lp__),] %>% as.matrix() %>% c()
+la.summary_all = la.summary_all %>% select(MAP, mean,se_mean, sd, `5%`, `95%`,n_eff,Rhat)
+
+la.summary_all %>% round(.,digits = 3) %>%  DT::datatable(.,options = list(pageLength = dim(.)[1]))
+# la.summary_all %>% round(.,digits = 3) %>%  DT::datatable()
+```
+
+Highlight chemicals whose x_50 has a posterior-sd higher than 10
+
+```{r}
+la.summary_all[which (la.summary_all$sd > 10), ]
+```
+
+
+### CIa 
+
+
+
+#### Traceplots
+
+```{r}
+tmp.parsName
+
+stan_trace(tmp.fit, pars = c(
+  "y_max_CIa_Rot",
+  "y_min_CIa_Rot",
+  "k_CIa_Rot",
+  "y_max_CIa_Deg",
+  "y_min_CIa_Deg",
+  "k_CIa_Deg"))
+
+stan_trace(tmp.fit, pars = "x_50_CIa_All")
+stan_trace(tmp.fit, pars = c("sigma_CIa",
+                             "lp__"))
+```
+
+
+
+#### Posterior distribution
+
+```{r eval=T}
+stan_hist(tmp.fit, pars = c(
+  "y_max_CIa_Rot",
+  "y_min_CIa_Rot",
+  "k_CIa_Rot",
+  "y_max_CIa_Deg",
+  "y_min_CIa_Deg",
+  "k_CIa_Deg"))
+
+stan_hist(tmp.fit, pars = "x_50_CIa_All")
+stan_hist(tmp.fit, pars = c("sigma_CIa",
+                             "lp__"))
+```
+
+
+#### Autocorrelation
+
+```{r eval=T}
+stan_ac(tmp.fit, pars = c(
+  "y_max_CIa_Rot",
+  "y_min_CIa_Rot",
+  "k_CIa_Rot",
+  "y_max_CIa_Deg",
+  "y_min_CIa_Deg",
+  "k_CIa_Deg"))
+
+stan_ac(tmp.fit, pars = "x_50_CIa_All")
+stan_ac(tmp.fit, pars = c("sigma_CIa",
+                             "lp__"))
+```
+
+
+### MTa {.tabset .tabset-fade .tabset-pills}
+
+#### Traceplots
+
+```{r}
+stan_trace(tmp.fit,
+          pars = tmp.pars.MTa,nrow = 2)
+```
+
+#### Posterior distribution
+
+```{r}
+stan_hist(tmp.fit,
+          pars = tmp.pars.MTa,nrow = 2)
+```
+
+
+#### Autocorrelation
+
+```{r}
+stan_ac(tmp.fit,
+        pars = tmp.pars.MTa,nrow = 2)
+```
+
+## Check fit with data : Visual validation
+
+### Load data
+
+```{r eval=T, results='hide'}
+source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R'))
+source(glob_params$f.RScript('load-and-reshape-morechemi.R'))
+```
+
+```{r}
+tmp.data.KE1.ds1 = KE1.both %>% 
+  inner_join(chemi.common.all, by = "chemi") %>% 
+  filter(., concentration_MuMol > 0, c1_activity > 0) 
+tmp.data.KE1.ds2 = KE1.other.chemi %>% 
+  inner_join(chemi.common.all, by = "chemi") %>% 
+  filter(., concentration_MuMol > 0, c1_activity > 0)
+
+tmp.data.KE1 = bind_rows(tmp.data.KE1.ds1,
+                         tmp.data.KE1.ds2) %>% 
+  arrange(chemiID, concentration_MuMol) %>% 
+  inner_join(chemiID_chosen, by = c("chemiID", "chemi"))
+
+tmp.data.KE2.ds1 = KE2.both %>% 
+  inner_join(chemi.common.all, by = "chemi") %>% 
+  filter(., concentration_MuMol > 0, mito_resp > 0) 
+tmp.data.KE2.ds2 = KE2.other.chemi %>% 
+  inner_join(chemi.common.all, by = "chemi") %>% 
+  filter(., concentration_MuMol > 0, mito_resp > 0)
+
+tmp.data.KE2 = bind_rows(tmp.data.KE2.ds1,
+                         tmp.data.KE2.ds2) %>% 
+  arrange(chemiID, concentration_MuMol) %>% 
+  inner_join(chemiID_chosen, by = c("chemiID", "chemi"))
+```
+
+### Posterior predictions
+
+```{r}
+tmp.est.ponct = la.map_all
+
+set.seed(1)
+post_sample.size = 100
+# Random seed
+
+post_sample.CIa_raw =
+  tmp.fit %>%
+  rstan::extract(.,
+                 pars = tmp.parsName,
+                 permuted = T) %>% as.data.frame() %>%
+  as_tibble() %>%
+  sample_n(size = post_sample.size) %>%
+  mutate(replication = paste0("post_sample",row_number() )) %>%
+  bind_rows(., select(tmp.est.ponct, names(.)[-ncol(.)]) %>% as_tibble() %>%
+              mutate(replication = "map"))
+
+post_sample.CIa = 
+  post_sample.CIa_raw %>% 
+    mutate(y_min_CIa_Rot  = NULL,
+           y_max_CIa_Rot  = NULL,
+           k_CIa_Rot      = NULL,
+           y_min_CIa_Deg  = NULL,
+           y_max_CIa_Deg  = NULL,
+           k_CIa_Deg      = NULL,
+           sigma_CIa      = NULL,
+           lp__           = NULL) %>%
+    gather(c(starts_with("y_min_CIa_All"),
+             starts_with("y_max_CIa_All"),
+             starts_with("x_50_CIa_All"),
+             starts_with("k_CIa_All")),
+           key = "params_name", value = "parames_value") %>%
+    mutate(chemiID_New = str_sub(params_name,
+                             start = str_locate(params_name,pattern = "\\.")[,1] + 1,
+                             end = -1) %>% as.integer(),
+           params_name = str_sub(params_name,
+                                 end = str_locate(params_name,pattern = "_All")[,1] - 1)) %>% 
+  inner_join(chemiID_chosen, by = "chemiID_New")
+
+
+
+
+```
+
+#### chemi -> CIa
+
+```{r}
+p.data_pred =
+  post_sample.CIa %>%
+    spread(key = params_name, value = parames_value) %>% 
+  group_by(chemiID) %>% 
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>% 
+  ungroup() %>% tidyr::crossing(concentration_MuMol = c(10^(seq(-4, log10(10^5), 0.05)),
+                                            10^4) %>% unique()) %>%    # repeat each row for
+  
+    mutate(c1_activity = f.link.lgstc(
+      x = log(concentration_MuMol),
+      params = list(
+        y_min     = y_min_CIa,
+        y_max     = y_max_CIa,
+        x_50      = x_50_CIa %>% log(),
+        k         = k_CIa
+      )
+    )) %>% 
+    mutate(mito_resp = # Predict MTa with correponding post_sample
+             f.link.linear(x = c1_activity,
+                           params = list(beta   = beta_MTa,
+                                         beta_0 = beta_0_MTa)
+                           ) %>%
+             f.link.truncation(., lower = 0, upper = 120)
+    )
+
+```
+
+```{r}
+p.data = 
+  bind_rows(
+    tmp.data.KE1 %>% mutate(curve = 0) %>%
+      select(chemiID, chemi, curve, concentration_MuMol, c1_activity, replication),
+    p.data_pred %>%
+      select(chemiID, chemi, curve, concentration_MuMol, c1_activity, replication)) %>% 
+  mutate(curve.col = ifelse(curve<=post_sample.size, 'grey', 'red'),
+         curve.alpha = ifelse(curve<=post_sample.size, 0.5, 1),
+         chemi_od = factor(chemi, 
+                           ordered = T,
+                           levels = chemi.common.all$chemi))
+
+
+
+ggplot(data = p.data,
+           aes(x = concentration_MuMol,
+               y = c1_activity, colour = replication)) +
+  geom_line (
+    data = . %>% filter(curve > 0),
+    aes(group = curve),
+    alpha = 0.5,
+    colour = "grey"
+  ) +
+  theme(legend.position = "none") +
+  geom_line (
+    data = . %>% filter(curve == post_sample.size + 1),
+    alpha = 1,
+    colour = "red"
+  ) +
+  geom_point(data = . %>% filter(curve == 0)) +
+  scale_y_continuous(limit = c(0, 120), oob = censor) +
+  scale_x_continuous(trans = "log10") +
+  facet_wrap(~ chemi) +
+  ggtitle("y of solid lines and dots are both predicted")
+
+```
+
+#### MTa
+
+##### chemi -> MTa
+
+```{r}
+p.data = 
+  bind_rows(
+    tmp.data.KE2 %>% mutate(curve = 0) %>%
+      select(chemiID, chemi, curve, concentration_MuMol, mito_resp, replication),
+    p.data_pred %>%
+      select(chemiID, chemi, curve, concentration_MuMol, mito_resp, replication)) %>% 
+  mutate(curve.col = ifelse(curve<=post_sample.size, 'grey', 'red'),
+         curve.alpha = ifelse(curve<=post_sample.size, 0.5, 1),
+         chemi_od = factor(chemi, 
+                           ordered = T,
+                           levels = chemi.common.all$chemi))
+
+ggplot(data = p.data,
+           aes(x = concentration_MuMol,
+               y = mito_resp, colour = replication)) +
+  geom_line (
+    data = . %>% filter(curve > 0),
+    aes(group = curve),
+    alpha = 0.5,
+    colour = "grey"
+  ) +
+  theme(legend.position = "none") +
+  geom_line (
+    data = . %>% filter(curve == post_sample.size + 1),
+    alpha = 1,
+    colour = "red"
+  ) +
+  geom_point(data = . %>% filter(curve == 0)) +
+  scale_y_continuous(limit = c(0, 120), oob = censor) +
+  scale_x_continuous(trans = "log10") +
+  facet_wrap(~ chemi) +
+  ggtitle("Dose -> MTa, fit plot. Dots are raw data. red line is fit with MAP, gray lines are fit with post-samples")
+```
+
+#### CIa -> MTa {.tabset .tabset-fade .tabset-pills}
+
+```{r}
+
+p.data = tmp.data.KE2
+
+p.data_pred =
+  post_sample.CIa %>%
+    spread(key = params_name, value = parames_value) %>%
+  group_by(chemiID) %>%
+  dplyr::mutate(., curve = c(1:dim(.)[1])[dplyr::row_number()]) %>%
+  ungroup() %>% tidyr::crossing(c1_activity = seq(0,120, 1)) %>%    # repeat each row for
+  mutate(mito_resp = # Predict MTa with correponding post_sample
+           f.link.linear(x = c1_activity,
+                         params = list(beta   = beta_MTa,
+                                       beta_0 = beta_0_MTa)
+                         ) %>%
+           f.link.truncation(., lower = 0, upper = 120)
+  ) %>% 
+  left_join(chemiID_chosen)
+
+p.data_rawDose_pred =
+  post_sample.CIa %>% 
+    filter(replication == "map") %>% mutate(replication = NULL) %>% 
+    spread(key = params_name, value = parames_value) %>%
+    left_join(tmp.data.KE2, by = "chemiID") %>% 
+    mutate(c1_activity = f.link.lgstc(
+        x = log(concentration_MuMol),
+        params = list(
+          y_min     = y_min_CIa,
+          y_max     = y_max_CIa,
+          x_50      = x_50_CIa %>% log(),
+          k         = k_CIa
+        )
+      )) %>% 
+  left_join(chemiID_chosen)
+
+p.data = bind_rows(
+    p.data_rawDose_pred %>% mutate(curve = 0) %>% 
+      select(chemiID, chemi, curve, c1_activity, mito_resp, replication),
+    p.data_pred %>%
+      select(chemiID, chemi, curve, c1_activity, mito_resp, replication))
+
+```
+
+##### With CIa_pred of raw data
+
+```{r}
+ggplot(data = p.data,
+           aes(x = c1_activity,
+               y = mito_resp, colour = replication)) +
+  geom_line (
+    data = . %>% filter(curve > 0),
+    aes(group = curve),
+    alpha = 0.5,
+    colour = "grey"
+  ) +
+  theme(legend.position = "none") +
+  geom_line (
+    data = . %>% filter(curve == post_sample.size + 1),
+    alpha = 1,
+    colour = "red"
+  ) +
+  geom_point(data = . %>% filter(curve == 0)) +
+  scale_y_continuous(limit = c(0, 120), oob = censor) +
+  facet_wrap(~ chemi) +
+  ggtitle("CIa -> MTa (colored dots representing (CIa_pred, MTa_obs) where CIa_pred is calculated with raw data and MAP estimate")
+```
+
+##### Without CIa_pred of raw data
+
+```{r}
+ggplot(data = p.data,
+           aes(x = c1_activity,
+               y = mito_resp, colour = replication)) +
+  geom_line (
+    data = . %>% filter(curve > 0),
+    aes(group = curve),
+    alpha = 0.5,
+    colour = "grey"
+  ) +
+  theme(legend.position = "none") +
+  geom_line (
+    data = . %>% filter(curve == post_sample.size + 1),
+    alpha = 1,
+    colour = "red"
+  ) +
+  # geom_point(data = . %>% filter(curve == 0)) +
+  scale_y_continuous(limit = c(0, 120), oob = censor) +
+  facet_wrap(~ chemi) +
+  ggtitle("CIa -> MTa prediction plot")
+```
+

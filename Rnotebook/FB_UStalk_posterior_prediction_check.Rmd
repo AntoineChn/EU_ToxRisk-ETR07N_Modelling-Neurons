@@ -1,0 +1,203 @@
+---
+title: "FB_UStalk_posterior_prediction_check"
+output:
+  html_notebook:
+    toc: true
+    toc_depth: 3
+    code_folding: hide
+    number_sections: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    fig_caption: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '..')
+knitr::opts_chunk$set(
+  cache = FALSE,
+  out.width = "100%",
+  fig.align = 'center',
+  fig.width = 8,
+  fig.asp = 0.618,  # 1 / phi
+  fig.show = "hold",
+  warning=FALSE, message=FALSE,
+  eval = TRUE, echo = TRUE
+)
+```
+
+```{r copy_img_folder, include=F}
+file.copy("./img", "./Rnotebook", recursive=TRUE, overwrite=T)
+```
+
+
+```{r glob_param, include=FALSE}
+source("GlobalParameters.R")
+source(glob_params$f.RFunc("stanFit_Name.R"))
+pckToLoad = c('tidyverse', 'DT',  "threejs",
+              "plyr","citr","readxl",'scales',"rstan","reshape2", "rgl",
+              "bayesplot","gridExtra")
+reloadpck()
+```
+
+# Introduction
+
+> Mail : "RE: [Question] RE: BN analysis of EU-ToxRisk CS4 data: urgent"
+>
+> My idea of it would be to say: with only two chemicals for calibration, we get such predictions (not too good, but not too bad, that’s an upper bound on bad in a way)
+>
+> -- FB 
+
+## AOP
+
+**AOP ETR07N**
+
+```{r echo=FALSE, out.width='100%'}
+knitr::include_graphics('./img/AOP_ETR07N.png')
+```
+
+- Chemical : `Dose` for chemical concentration
+- KE1 : `CIa` for complex I activity
+- KE2 : `MTa` for Mitochondrial activity
+- KE3 : `PRa` for proteostasis activity
+- KE4 : `NRa` for Neurite Area
+
+## Data {.tabset .tabset-fade .tabset-pills}
+
+We have four data one for each Key event
+
+In this stage, Wang works on the chemicals that exist in all these four data set. These chemicals are
+
+```{r}
+chemi.common.all
+```
+
+
+```{r eval=T, results='hide'}
+source(glob_params$f.RScript('load-and-reshape-Konstanz-data.R'))
+source(glob_params$f.RScript('load-and-reshape-morechemi.R'))
+```
+
+```{r eval=T, results='hide'}
+{# joint All data concerning KE1
+  tmp.data.KE1.ds1 = KE1.both %>%
+    inner_join(chemi.common.all, by = "chemi") %>%
+    filter(., concentration_MuMol > 0, c1_activity > 0)
+  tmp.data.KE1.ds2 = KE1.other.chemi %>%
+    inner_join(chemi.common.all, by = "chemi") %>%
+    filter(., concentration_MuMol > 0, c1_activity > 0)
+  
+  tmp.data.KE1 = bind_rows(tmp.data.KE1.ds1,
+                           tmp.data.KE1.ds2) %>%
+    arrange(chemiID, concentration_MuMol)
+}
+
+{# joint All data concerning KE2
+  tmp.data.KE2.ds1 = KE2.both %>%
+    inner_join(chemi.common.all, by = "chemi") %>%
+    filter(., concentration_MuMol > 0, mito_resp > 0)
+  tmp.data.KE2.ds2 = KE2.other.chemi %>%
+    inner_join(chemi.common.all, by = "chemi") %>%
+    filter(., concentration_MuMol > 0, mito_resp > 0)
+  
+  tmp.data.KE2 = bind_rows(tmp.data.KE2.ds1,
+                           tmp.data.KE2.ds2) %>%
+    arrange(chemiID, concentration_MuMol)
+}
+
+{# joint All data concerning KE3
+  tmp.data.KE3.ds1 = KE3.both %>%
+    inner_join(chemi.common.all, by = "chemi") %>%
+    filter(., concentration_MuMol > 0, Prot_acti > 0)
+  tmp.data.KE3.ds2 = KE3.other.chemi %>%
+    inner_join(chemi.common.all, by = "chemi") %>%
+    filter(., concentration_MuMol > 0, Prot_acti > 0)
+  
+  tmp.data.KE3 = bind_rows(tmp.data.KE3.ds1,
+                           tmp.data.KE3.ds2) %>%
+    arrange(chemiID, concentration_MuMol)
+}
+
+{# joint All data concerning KE4
+  tmp.data.KE4.ds1 = KE4.both %>%
+    inner_join(chemi.common.all, by = "chemi") %>%
+    filter(., concentration_MuMol > 0, Neurite_Area > 0)
+  tmp.data.KE4.ds2 = KE4.other.chemi %>%
+    inner_join(chemi.common.all, by = "chemi") %>%
+    filter(., concentration_MuMol > 0, Neurite_Area > 0)
+  
+  tmp.data.KE4 = bind_rows(tmp.data.KE4.ds1,
+                           tmp.data.KE4.ds2) %>%
+    arrange(chemiID, concentration_MuMol)
+}
+```
+
+
+### Data Set 1 Dose -> CIa
+
+$\mathcal{D}_{1}$
+
+```{r}
+tmp.data.KE1 %>% datatable()
+```
+
+### Data Set 2 Dose -> MTa
+
+$\mathcal{D}_{2}$
+
+```{r}
+tmp.data.KE2 %>% datatable()
+```
+
+### Data Set 3 Dose -> PRa
+
+$\mathcal{D}_{3}$
+
+```{r}
+tmp.data.KE3 %>% datatable()
+```
+
+### Data Set 4 Dose -> NTa
+
+$\mathcal{D}_{4}$ 
+
+```{r}
+tmp.data.KE4 %>% datatable()
+```
+
+## Workflow
+
+- fit_1: Fit data upto KE1 for all chemicals [<span style="color:red">Done</span>]
+- fit_2: Fit data upto KE4 for Rot and Deg   [<span style="color:red">Done</span>]
+- Posterior check for all chemicals
+    - KE1_pred : predict KE1 with parameters from fit_1.
+    - KE2_pred : predict KE2 based on KE1_pred and params_KER2 from fit_2
+    - KE3_pred : predict KE3 based on KE2_pred and params_KER3 from fit_2
+    - KE4_pred : predict KE4 based on KE2_pred, KE3_pred and params_KER4 from fit_2
+- Visualisation
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 

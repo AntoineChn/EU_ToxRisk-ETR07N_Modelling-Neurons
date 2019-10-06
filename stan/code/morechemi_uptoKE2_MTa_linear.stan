@@ -85,10 +85,10 @@ parameters {
 }
 
 transformed parameters{
-  real log_x_50_CIa_All [nchemi]          ; // log(x_50) for Rotenone
-  real y_min_CIa_All  [nchemi];
-  real y_max_CIa_All  [nchemi];
-  real k_CIa_All    [nchemi];
+  real log_x_50_CIa_All  [nchemi] ; // log(x_50) for Rotenone
+  real y_min_CIa_All     [nchemi] ;
+  real y_max_CIa_All     [nchemi] ;
+  real k_CIa_All         [nchemi] ;
   
   real            param_MTa[2]    ;
 
@@ -100,13 +100,15 @@ transformed parameters{
   y_max_CIa_All[2] = y_max_CIa_Deg ;
   k_CIa_All[2] = k_CIa_Deg ;
 
-  for(i in 3:nchemi) {
-      y_min_CIa_All[i] = (y_min_CIa_Rot + y_min_CIa_Deg) / 2 ;
-      y_max_CIa_All[i] = (y_max_CIa_Rot + y_max_CIa_Deg) / 2 ;
-      k_CIa_All[i]     = (k_CIa_Rot     + k_CIa_Deg    ) / 2 ;
+  if(nchemi >=3 ){
+    for(i in 3:nchemi) {
+        y_min_CIa_All[i] = (y_min_CIa_Rot + y_min_CIa_Deg) / 2 ;
+        y_max_CIa_All[i] = (y_max_CIa_Rot + y_max_CIa_Deg) / 2 ;
+        k_CIa_All[i]     = (k_CIa_Rot     + k_CIa_Deg    ) / 2 ;
+    }
   }
-  log_x_50_CIa_All     = log(x_50_CIa_All) ;
   
+  log_x_50_CIa_All     = log(x_50_CIa_All) ;
   param_MTa[1] = beta_MTa ;
   param_MTa[2] = beta_0_MTa ;
 }

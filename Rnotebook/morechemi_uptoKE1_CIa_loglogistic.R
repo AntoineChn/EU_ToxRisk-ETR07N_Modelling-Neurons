@@ -35,24 +35,34 @@ source(glob_params$f.RScript('load-and-reshape-morechemi.R'))
 
 # Fit for all --------------------------------------------------------
 
-tmp.data.KE1.ds1 = KE1.both %>% 
-  inner_join(chemi.common.all, by = "chemi") %>% 
-  filter(., concentration_MuMol > 0, c1_activity > 0) 
-tmp.data.KE1.ds2 = KE1.other.chemi %>% 
-  inner_join(chemi.common.all, by = "chemi") %>% 
-  filter(., concentration_MuMol > 0, c1_activity > 0) 
+{# join two data sets
+  tmp.data.KE1.ds1 = KE1.both %>% 
+    inner_join(chemi.common.all, by = "chemi") %>% 
+    filter(., concentration_MuMol > 0, c1_activity > 0) 
+  tmp.data.KE1.ds2 = KE1.other.chemi %>% 
+    inner_join(chemi.common.all, by = "chemi") %>% 
+    filter(., concentration_MuMol > 0, c1_activity > 0)
+  
+  tmp.data.KE1 = bind_rows(tmp.data.KE1.ds1,
+                           tmp.data.KE1.ds2) %>% 
+    arrange(chemiID, concentration_MuMol)
+}
 
-tmp.data.KE1 = bind_rows(tmp.data.KE1.ds1,
-                         tmp.data.KE1.ds2) %>% 
-  arrange(chemiID, concentration_MuMol)
-tmp.data.KE1
+
+# Choose chemicals 
+(chemiID_chosen = (1:10))
+chemiID_chosen = chemi.common.all %>% filter(chemiID %in% chemiID_chosen) %>% 
+  mutate(chemiID_Param = row_number())
+
+# train data set
+tmp.train.data.KE1 = tmp.data.KE1 %>% inner_join(chemiID_chosen, by = c("chemiID","chemi"))
 
 stan_input.Neuro = list(
-  "nchemi"             = tmp.data.KE1$chemi %>% n_distinct(),
-  "ndata_CIa"          = nrow(tmp.data.KE1),
-  "dose_CIa"           = tmp.data.KE1$concentration_MuMol,
-  "CIa_CIa"            = tmp.data.KE1$c1_activity,
-  "chemiID_CIa"        = tmp.data.KE1$chemiID 
+  "nchemi"             = tmp.train.data.KE1$chemiID_Param %>% n_distinct(),
+  "ndata_CIa"          = nrow(tmp.train.data.KE1),
+  "dose_CIa"           = tmp.train.data.KE1$concentration_MuMol,
+  "CIa_CIa"            = tmp.train.data.KE1$c1_activity,
+  "chemiID_CIa"        = tmp.train.data.KE1$chemiID_Param
 )
 
 p.pars.CIa   = c(
@@ -73,11 +83,11 @@ tmp.parsName = c(p.pars.CIa,
                  "lp__")
 
 nb.chains = 3
-nb.iter = 5000
+nb.iter = 10000
 my.seed = tmp.timestamp
 
 source(glob_params$f.RFunc("stanFit_Name.R"))
-tmp.stanFit.name = f.stanFit.newName(chemi         = "All",
+tmp.stanFit.name = f.stanFit.newName(chemi         = paste(chemiID_chosen$chemiID,collapse = '.'),
                                      stanfile.name = tmp.stanfile.name,
                                      timestamp     = tmp.timestamp,
                                      nb.chains     = nb.chains,
@@ -99,8 +109,6 @@ fit_morechemi_uptoKE1_CIa_loglogistic = sampling(
 
 # shinystan::launch_shinystan(fit_morechemi_uptoKE1_CIa_loglogistic)
 
-fit_morechemi_uptoKE1_CIa_loglogistic
-
 tmp.summary = summary(fit_morechemi_uptoKE1_CIa_loglogistic,
                       probs = c(0.05, 0.95),
                       pars = tmp.parsName)$summary %>% 
@@ -109,7 +117,7 @@ tmp.summary = summary(fit_morechemi_uptoKE1_CIa_loglogistic,
 tmp.n_eff.min     = tmp.summary$n_eff[!is.na(tmp.summary$n_eff)] %>% min() %>% ceiling()
 tmp.rhat.max      = tmp.summary$Rhat[is.finite(tmp.summary$Rhat)] %>% max() %>% round(digits = 2)
 
-tmp.stanFit.name = f.stanFit.newName(chemi         = "all",
+tmp.stanFit.name = f.stanFit.newName(chemi         = paste(chemiID_chosen$chemiID,collapse = '.'),
                                      stanfile.name = tmp.stanfile.name,
                                      timestamp     = tmp.timestamp,
                                      nb.chains     = nb.chains,
